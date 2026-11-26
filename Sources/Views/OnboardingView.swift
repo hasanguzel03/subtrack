@@ -2,6 +2,7 @@ import SwiftUI
 
 struct OnboardingView: View {
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
+    @AppStorage("appLanguage") private var appLanguage = "tr"
     @AppStorage("currencySymbol") private var currencySymbol = "₺"
     @AppStorage("reminderDaysBefore") private var reminderDaysBefore = 1
 
@@ -12,13 +13,20 @@ struct OnboardingView: View {
             AeroBackground()
 
             VStack(spacing: 32) {
-                if step == 1 {
+                switch step {
+                case 1:
+                    languageStep
+                        .transition(.asymmetric(
+                            insertion: .move(edge: .trailing).combined(with: .opacity),
+                            removal: .move(edge: .leading).combined(with: .opacity)
+                        ))
+                case 2:
                     currencyStep
                         .transition(.asymmetric(
                             insertion: .move(edge: .trailing).combined(with: .opacity),
                             removal: .move(edge: .leading).combined(with: .opacity)
                         ))
-                } else {
+                default:
                     reminderStep
                         .transition(.asymmetric(
                             insertion: .move(edge: .trailing).combined(with: .opacity),
@@ -30,11 +38,42 @@ struct OnboardingView: View {
         }
     }
 
-    // MARK: - Step 1: Currency
+    // MARK: - Step 1: Language
+
+    private var languageStep: some View {
+        VStack(spacing: 24) {
+            Text("Dil / Language")
+                .font(.title2.bold())
+
+            VStack(spacing: 12) {
+                languageButton(title: "Türkçe", code: "tr")
+                languageButton(title: "English", code: "en")
+            }
+        }
+    }
+
+    private func languageButton(title: String, code: String) -> some View {
+        Button {
+            appLanguage = code
+            withAnimation(.easeInOut(duration: 0.35)) {
+                step = 2
+            }
+        } label: {
+            HStack {
+                Text(title)
+                    .font(.body.weight(.medium))
+                Spacer()
+            }
+            .aeroCard()
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Step 2: Currency
 
     private var currencyStep: some View {
         VStack(spacing: 24) {
-            Text("Para Birimi")
+            Text(L10n.onboardingCurrencyTitle)
                 .font(.title2.bold())
 
             VStack(spacing: 12) {
@@ -50,7 +89,7 @@ struct OnboardingView: View {
         Button {
             currencySymbol = symbol
             withAnimation(.easeInOut(duration: 0.35)) {
-                step = 2
+                step = 3
             }
         } label: {
             HStack {
@@ -66,19 +105,19 @@ struct OnboardingView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Step 2: Reminder
+    // MARK: - Step 3: Reminder
 
     private var reminderStep: some View {
         VStack(spacing: 24) {
-            Text("Ödemelerden ne kadar\nönce uyaralım?")
+            Text(L10n.onboardingReminderTitle)
                 .font(.title2.bold())
                 .multilineTextAlignment(.center)
 
             VStack(spacing: 12) {
-                reminderButton(title: "Aynı Gün", days: 0)
-                reminderButton(title: "1 Gün Önce", days: 1)
-                reminderButton(title: "3 Gün Önce", days: 3)
-                reminderButton(title: "1 Hafta Önce", days: 7)
+                reminderButton(title: L10n.reminderSameDay, days: 0)
+                reminderButton(title: L10n.reminder1Day, days: 1)
+                reminderButton(title: L10n.reminder3Days, days: 3)
+                reminderButton(title: L10n.reminder1Week, days: 7)
             }
         }
     }
@@ -86,6 +125,9 @@ struct OnboardingView: View {
     private func reminderButton(title: String, days: Int) -> some View {
         Button {
             reminderDaysBefore = days
+            Task {
+                await NotificationManager.shared.requestAuthorization()
+            }
             withAnimation(.easeInOut(duration: 0.35)) {
                 hasCompletedOnboarding = true
             }

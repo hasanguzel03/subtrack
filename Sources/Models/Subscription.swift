@@ -9,6 +9,9 @@ final class Subscription {
     var billingCycle: String   // "monthly" or "yearly"
     var nextBillingDate: Date
     var createdAt: Date
+    var iconName: String
+    var isFreeTrial: Bool
+    var customReminderDays: Int?
 
     init(
         id: UUID = UUID(),
@@ -16,7 +19,10 @@ final class Subscription {
         price: Double = 0,
         billingCycle: String = "monthly",
         nextBillingDate: Date = .now,
-        createdAt: Date = .now
+        createdAt: Date = .now,
+        iconName: String = "creditcard",
+        isFreeTrial: Bool = false,
+        customReminderDays: Int? = nil
     ) {
         self.id = id
         self.name = name
@@ -24,5 +30,8 @@ final class Subscription {
         self.billingCycle = billingCycle
         self.nextBillingDate = nextBillingDate
         self.createdAt = createdAt
+        self.iconName = iconName
+        self.isFreeTrial = isFreeTrial
+        self.customReminderDays = customReminderDays
     }
 }

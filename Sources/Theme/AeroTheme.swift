@@ -25,9 +25,9 @@ struct AeroBackground: View {
 
     private var lightColors: [Color] {
         [
-            Color(hex: 0xF4F0FA),
-            Color(hex: 0xE6DCF5),
-            Color(hex: 0xEFE9F8)
+            Color(hex: 0xF3EEFA),
+            Color(hex: 0xE4D7F5),
+            Color(hex: 0xEDE5F8)
         ]
     }
 }

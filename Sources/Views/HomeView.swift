@@ -11,10 +11,14 @@ struct HomeView: View {
     @State private var showSettings = false
     @State private var selectedSubscription: Subscription?
 
-    // MARK: - Totals
+    // MARK: - Totals (exclude free trials)
+
+    private var paidSubscriptions: [Subscription] {
+        subscriptions.filter { !$0.isFreeTrial }
+    }
 
     private var totalMonthly: Double {
-        subscriptions.reduce(0) { total, sub in
+        paidSubscriptions.reduce(0) { total, sub in
             if sub.billingCycle == "yearly" {
                 return total + sub.price / 12
             }
@@ -23,7 +27,7 @@ struct HomeView: View {
     }
 
     private var totalYearly: Double {
-        subscriptions.reduce(0) { total, sub in
+        paidSubscriptions.reduce(0) { total, sub in
             if sub.billingCycle == "monthly" {
                 return total + sub.price * 12
             }
@@ -61,25 +65,34 @@ struct HomeView: View {
                             Button {
                                 selectedSubscription = sub
                             } label: {
-                                rowContent(
-                                    name: sub.name,
-                                    date: sub.nextBillingDate,
-                                    price: sub.price,
-                                    cycle: sub.billingCycle
-                                )
-                                .aeroCard()
+                                subscriptionRow(sub)
                             }
                             .buttonStyle(.plain)
                         }
 
                         // SubTrack Pro (not included in total)
                         Button { showProAlert = true } label: {
-                            rowContent(
-                                name: "SubTrack Pro",
-                                date: proDate,
-                                price: 59,
-                                cycle: nil
-                            )
+                            HStack {
+                                Image(systemName: "sparkles")
+                                    .font(.body)
+                                    .frame(width: 24)
+                                    .foregroundStyle(.secondary)
+
+                                Text("SubTrack Pro")
+                                    .font(.body.weight(.semibold))
+
+                                Text("•")
+                                    .foregroundStyle(.secondary)
+
+                                Text(proDate, format: .dateTime.day().month(.abbreviated))
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+
+                                Spacer()
+
+                                Text("\(currencySymbol)59")
+                                    .font(.body.weight(.semibold))
+                            }
                             .aeroCard()
                             .opacity(0.45)
                         }
@@ -104,8 +117,8 @@ struct HomeView: View {
                 totalBar
             }
         }
-        .alert("SubTrack Pro yakında", isPresented: $showProAlert) {
-            Button("Tamam", role: .cancel) {}
+        .alert(L10n.proComingSoon, isPresented: $showProAlert) {
+            Button(L10n.ok, role: .cancel) {}
         }
         .sheet(isPresented: $showAddSheet) {
             AddSubscriptionView(subscriptionToEdit: nil)
@@ -119,30 +132,45 @@ struct HomeView: View {
         }
     }
 
-    // MARK: - Row Content
+    // MARK: - Subscription Row
 
-    private func rowContent(name: String, date: Date, price: Double, cycle: String?) -> some View {
-        HStack {
-            Text(name)
+    private func subscriptionRow(_ sub: Subscription) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: sub.iconName)
+                .font(.body)
+                .frame(width: 24)
+                .foregroundStyle(.secondary)
+
+            Text(sub.name)
                 .font(.body.weight(.semibold))
+
+            if sub.isFreeTrial {
+                Text(L10n.trial)
+                    .font(.caption2.weight(.semibold))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .foregroundStyle(.orange)
+            }
 
             Text("•")
                 .foregroundStyle(.secondary)
 
-            Text(date, format: .dateTime.day().month(.abbreviated))
+            Text(sub.nextBillingDate, format: .dateTime.day().month(.abbreviated))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
             Spacer()
 
-            if let cycle, cycle == "yearly" {
-                Text("\(currencySymbol)\(formattedPrice(price)) /y")
+            if sub.billingCycle == "yearly" {
+                Text("\(currencySymbol)\(formattedPrice(sub.price)) /y")
                     .font(.body.weight(.semibold))
             } else {
-                Text("\(currencySymbol)\(formattedPrice(price))")
+                Text("\(currencySymbol)\(formattedPrice(sub.price))")
                     .font(.body.weight(.semibold))
             }
         }
+        .aeroCard()
     }
 
     private func formattedPrice(_ value: Double) -> String {
@@ -169,9 +197,9 @@ struct HomeView: View {
             } label: {
                 Group {
                     if showYearly {
-                        Text("Toplam: \(currencySymbol)\(formattedPrice(totalYearly)) / yıl")
+                        Text(L10n.totalYearly(formattedPrice(totalYearly), currencySymbol))
                     } else {
-                        Text("Toplam: \(currencySymbol)\(formattedPrice(totalMonthly)) / ay")
+                        Text(L10n.totalMonthly(formattedPrice(totalMonthly), currencySymbol))
                     }
                 }
                 .font(.title3.weight(.bold))
