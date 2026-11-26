@@ -1,41 +1,66 @@
 import SwiftUI
 
 struct ContentView: View {
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
+    @AppStorage("currencySymbol") private var currencySymbol = "₺"
+    @AppStorage("reminderDaysBefore") private var reminderDaysBefore = 1
+
     var body: some View {
+        if hasCompletedOnboarding {
+            homeView
+        } else {
+            OnboardingView()
+        }
+    }
+
+    // MARK: - Temporary Home
+
+    private var homeView: some View {
         ZStack {
-            LinearGradient(
-                colors: [Color(red: 0.06, green: 0.07, blue: 0.11), Color.black],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+            AeroBackground()
 
-            VStack(spacing: 16) {
-                Image(systemName: "creditcard.and.123")
-                    .font(.system(size: 52, weight: .semibold))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [.cyan, .blue],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
+            VStack(spacing: 24) {
+                VStack(spacing: 8) {
+                    Image(systemName: "checkmark.seal.fill")
+                        .font(.system(size: 44))
+                        .foregroundStyle(.green)
 
-                Text("SubTrack Hazır")
-                    .font(.title2.bold())
-                    .foregroundStyle(.white)
+                    Text("Kurulum Tamamlandı")
+                        .font(.title2.bold())
+
+                    Text("\(currencySymbol) / \(reminderLabel)")
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                }
+                .aeroCard()
+
+                Button {
+                    withAnimation(.easeInOut(duration: 0.35)) {
+                        hasCompletedOnboarding = false
+                    }
+                } label: {
+                    Text("Sıfırla")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.red)
+                        .aeroCard()
+                }
+                .buttonStyle(.plain)
             }
-            .padding(32)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(.white.opacity(0.12), lineWidth: 1)
-            )
+            .padding(.horizontal, 24)
+        }
+    }
+
+    private var reminderLabel: String {
+        switch reminderDaysBefore {
+        case 0: return "Aynı gün"
+        case 1: return "1 gün önce"
+        case 3: return "3 gün önce"
+        case 7: return "1 hafta önce"
+        default: return "\(reminderDaysBefore) gün önce"
         }
     }
 }
 
 #Preview {
     ContentView()
-        .preferredColorScheme(.dark)
 }
