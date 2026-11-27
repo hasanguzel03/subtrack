@@ -64,14 +64,56 @@ struct L10n {
     static var delete: String { isTR ? "Sil" : "Delete" }
     static var freeTrial: String { isTR ? "Ücretsiz Deneme" : "Free Trial" }
     static var reminderLabel_field: String { isTR ? "Hatırlatıcı" : "Reminder" }
-    static var customSubscription: String { isTR ? "+ Özel Abonelik Ekle" : "+ Custom Subscription" }
-    static var searchPlaceholder: String { isTR ? "Ara..." : "Search..." }
+    static var choosePreset: String { isTR ? "Hazır Servis Seç" : "Choose Preset" }
+    static var iconColor: String { isTR ? "İkon Rengi" : "Icon Color" }
     static var scanFromScreenshot: String { isTR ? "Ekran Görüntüsünden Tara" : "Scan from Screenshot" }
+    static var dictate: String { isTR ? "Dikte" : "Dictate" }
     static var scanningScreenshot: String { isTR ? "Taranıyor..." : "Scanning..." }
     static var ocrNoDataFound: String {
         isTR
             ? "Bilgi okunamadı, elle girebilirsin"
             : "Couldn't detect details, you can enter manually"
+    }
+    static var speechPermissionDenied: String {
+        isTR
+            ? "Konuşma tanıma izni gerekli. Ayarlar'dan izin verebilirsin."
+            : "Speech recognition permission is required. You can enable it in Settings."
+    }
+    static var microphonePermissionDenied: String {
+        isTR
+            ? "Mikrofon izni gerekli. Ayarlar'dan izin verebilirsin."
+            : "Microphone permission is required. You can enable it in Settings."
+    }
+    static var speechRecognizerUnavailable: String {
+        isTR
+            ? "Konuşma tanıma şu anda kullanılamıyor."
+            : "Speech recognition is currently unavailable."
+    }
+    static var speechAudioError: String {
+        isTR
+            ? "Ses kaydı başlatılamadı."
+            : "Could not start audio recording."
+    }
+    static var dictationFormatHint: String {
+        isTR ? "Abonelik, Tarih, Ücret" : "Subscription, Date, Price"
+    }
+    static var done: String { isTR ? "Tamam" : "Done" }
+    static var listening: String { isTR ? "Dinleniyor..." : "Listening..." }
+
+    static var dictationExamples: [(text: String, colorHex: String)] {
+        if isTR {
+            return [
+                ("Spotify, 24 Kasım, 10.99", "#1DB954"),
+                ("YouTube, 15 Aralık, 79.99", "#FF0000"),
+                ("Netflix, 12 Ocak, 229.99", "#E50914")
+            ]
+        } else {
+            return [
+                ("Spotify, Nov 24, 10.99", "#1DB954"),
+                ("YouTube, Dec 15, 79.99", "#FF0000"),
+                ("Netflix, Jan 12, 229.99", "#E50914")
+            ]
+        }
     }
     static var priceHistory: String { isTR ? "Fiyat Geçmişi" : "Price History" }
 
@@ -188,21 +230,27 @@ struct L10n {
             return [
                 "Toplam tutara dokunarak aylık ve yıllık görünüm arasında geçiş yapabilirsin.",
                 "Yıllık planlar çoğu serviste %15–20 tasarruf sağlar.",
-                "Ücretsiz denemeleri bitmeden 1 gün önce kontrol etmeyi unutma.",
-                "Son 30 gündür açmadığın bir aboneliği iptal etmek en hızlı tasarruftur.",
-                "Kartlara dokunarak her abonelik için özel hatırlatma günü seçebilirsin.",
-                "Benzer servisleri dönüşümlü kullanmak aylık giderini ciddi oranda azaltır.",
-                "Ayarlar'dan para birimini, dili ve temayı dilediğin zaman değiştirebilirsin."
+                "Ücretsiz denemeleri iptal etmek için çoğunlukla son günü beklemene gerek yok.",
+                "Bu uygulama açık kaynaklıdır ve yerel olarak çalışmaktadır. Yani verileriniz güvende.",
+                "Hızlı abonelik eklemek için dikteyi kullanabilirsin.",
+                "Küçük aylık ödemeler yıl sonunda büyük masraflara dönüşebilir.",
+                "Ayarlar'dan para birimini, dili ve temayı dilediğin zaman değiştirebilirsin.",
+                "Unuttuğun abonelikleri bulmak için banka hesap hareketlerini kontrol et.",
+                "İptal ettiğin her gereksiz abonelik, tasarruf edebileceğin yeni bir fırsattır.",
+                "Öğrenci ve Aile indirimleri için biraz yaratıcı düşünmek gerekebilir."
             ]
         } else {
             return [
                 "Tap the total amount to switch between monthly and yearly views.",
                 "Annual plans save 15–20% on most subscription services.",
-                "Remember to check free trials 1 day before they renew.",
-                "Canceling a subscription you haven't used in 30 days is the fastest way to save.",
-                "Tap any card to set a custom reminder day for that subscription.",
-                "Rotating similar services month-to-month can cut your monthly bill significantly.",
-                "You can change your currency, language, and theme anytime in Settings."
+                "You usually don't need to wait until the last day to cancel a free trial.",
+                "This app is open source and runs locally, so your data stays safe.",
+                "You can use dictation to add subscriptions quickly.",
+                "Small monthly payments can add up to major expenses by the end of the year.",
+                "You can change your currency, language, and theme anytime in Settings.",
+                "Check your bank statements to spot subscriptions you may have forgotten.",
+                "Every unnecessary subscription you cancel is a new opportunity to save.",
+                "Getting student and family discounts might take a little creative thinking."
             ]
         }
     }

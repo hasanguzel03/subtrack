@@ -8,10 +8,27 @@ struct HomeView: View {
 
     @State private var showYearly = false
     @State private var showProAlert = false
-    @State private var showAddSheet = false
-    @State private var showAnalytics = false
-    @State private var showSettings = false
-    @State private var selectedSubscription: Subscription?
+    @State private var activeSheet: ActiveSheet?
+    @State private var showVoiceDictation = false
+    @State private var pendingDictationResult: ParsedSubscription?
+
+    private enum ActiveSheet: Identifiable {
+        case add
+        case addPrefilled(ParsedSubscription)
+        case edit(Subscription)
+        case analytics
+        case settings
+
+        var id: String {
+            switch self {
+            case .add: return "add"
+            case .addPrefilled: return "add-prefilled"
+            case .edit(let sub): return "edit-\(sub.id.uuidString)"
+            case .analytics: return "analytics"
+            case .settings: return "settings"
+            }
+        }
+    }
 
     // MARK: - Totals (exclude free trials)
 
@@ -52,13 +69,13 @@ struct HomeView: View {
                 HStack(spacing: 16) {
                     Spacer()
 
-                    Button { showAnalytics = true } label: {
+                    Button { activeSheet = .analytics } label: {
                         Image(systemName: "chart.pie")
                             .font(.body.weight(.medium))
                             .foregroundStyle(.secondary)
                     }
 
-                    Button { showSettings = true } label: {
+                    Button { activeSheet = .settings } label: {
                         Image(systemName: "gearshape")
                             .font(.body.weight(.medium))
                             .foregroundStyle(.secondary)
@@ -72,7 +89,7 @@ struct HomeView: View {
                     VStack(spacing: 12) {
                         ForEach(subscriptions) { sub in
                             Button {
-                                selectedSubscription = sub
+                                activeSheet = .edit(sub)
                             } label: {
                                 subscriptionRow(sub)
                             }
@@ -107,15 +124,28 @@ struct HomeView: View {
                         }
                         .buttonStyle(.plain)
 
-                        // New +
-                        Button { showAddSheet = true } label: {
-                            Text("New +")
-                                .font(.subheadline.weight(.medium))
-                                .frame(maxWidth: 160)
-                                .aeroCard()
-                                .opacity(0.45)
+                        // New + & Voice Dictation
+                        HStack(spacing: 12) {
+                            Button { activeSheet = .add } label: {
+                                Text("New +")
+                                    .font(.subheadline.weight(.medium))
+                                    .frame(minHeight: 20)
+                                    .aeroCard()
+                                    .frame(maxWidth: 160)
+                                    .opacity(0.45)
+                            }
+                            .buttonStyle(.plain)
+
+                            Button { showVoiceDictation = true } label: {
+                                Image(systemName: "mic.fill")
+                                    .font(.subheadline.weight(.medium))
+                                    .frame(minHeight: 20)
+                                    .aeroCard()
+                                    .frame(width: 56)
+                                    .opacity(0.45)
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
 
                         RotatingTipView()
                             .padding(.top, 8)
@@ -132,19 +162,31 @@ struct HomeView: View {
         .alert(L10n.proComingSoon, isPresented: $showProAlert) {
             Button(L10n.ok, role: .cancel) {}
         }
-        .sheet(isPresented: $showAddSheet) {
-            AddSubscriptionView(subscriptionToEdit: nil)
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .add:
+                AddSubscriptionView(subscriptionToEdit: nil)
+            case .addPrefilled(let parsed):
+                AddSubscriptionView(subscriptionToEdit: nil, prefilledData: parsed)
+            case .edit(let sub):
+                AddSubscriptionView(subscriptionToEdit: sub)
+            case .analytics:
+                AnalyticsView()
+                    .presentationDetents([.large])
+            case .settings:
+                SettingsView()
+                    .presentationDetents([.large])
+            }
         }
-        .sheet(item: $selectedSubscription) { sub in
-            AddSubscriptionView(subscriptionToEdit: sub)
-        }
-        .sheet(isPresented: $showAnalytics) {
-            AnalyticsView()
-                .presentationDetents([.large])
-        }
-        .sheet(isPresented: $showSettings) {
-            SettingsView()
-                .presentationDetents([.large])
+        .fullScreenCover(isPresented: $showVoiceDictation, onDismiss: {
+            if let parsed = pendingDictationResult {
+                pendingDictationResult = nil
+                activeSheet = .addPrefilled(parsed)
+            }
+        }) {
+            VoiceDictationView { parsed in
+                pendingDictationResult = parsed
+            }
         }
     }
 
@@ -153,9 +195,9 @@ struct HomeView: View {
     private func subscriptionRow(_ sub: Subscription) -> some View {
         HStack(spacing: 10) {
             Image(systemName: sub.iconName)
-                .font(.body)
+                .font(.body.weight(.semibold))
                 .frame(width: 24)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color(hex: sub.colorHex))
 
             Text(sub.name)
                 .font(.body.weight(.semibold))

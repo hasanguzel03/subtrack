@@ -65,6 +65,7 @@ struct AeroCardModifier: ViewModifier {
                 shape
                     .stroke(specularBorder, lineWidth: 1)
             }
+            .contentShape(shape)
     }
 
     private var specularBorder: LinearGradient {
@@ -97,5 +98,16 @@ extension Color {
             blue: Double(hex & 0xFF) / 255,
             opacity: alpha
         )
+    }
+
+    init(hex: String) {
+        let cleaned = hex
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "#", with: "")
+        if cleaned.count == 6, let hexValue = UInt(cleaned, radix: 16) {
+            self.init(hex: hexValue)
+        } else {
+            self.init(hex: 0xA855F7)
+        }
     }
 }

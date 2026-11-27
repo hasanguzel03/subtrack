@@ -10,216 +10,151 @@ struct AddSubscriptionView: View {
     @AppStorage("reminderDaysBefore") private var globalReminderDays = 1
 
     var subscriptionToEdit: Subscription?
-
-    // Phase: catalog picker vs detail form
-    @State private var showDetailForm: Bool = false
+    var prefilledData: ParsedSubscription? = nil
 
     // Form fields
     @State private var name: String = ""
     @State private var iconName: String = "creditcard"
+    @State private var colorHex: String = "#A855F7"
     @State private var priceText: String = ""
     @State private var billingCycle: String = "monthly"
     @State private var nextBillingDate: Date = .now
     @State private var isFreeTrial: Bool = false
     @State private var useCustomReminder: Bool = false
     @State private var customReminderDays: Int = 1
+    @State private var hasLoadedInitialData: Bool = false
 
-    // Catalog search
-    @State private var searchText: String = ""
-
-    // OCR screenshot import
+    // OCR screenshot import & voice dictation
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var isScanning: Bool = false
+    @State private var showVoiceDictation: Bool = false
     @State private var ocrWarningMessage: String?
 
     private var isEditing: Bool { subscriptionToEdit != nil }
 
-    private var filteredCatalog: [ServiceCatalogItem] {
-        if searchText.isEmpty { return serviceCatalog }
-        return serviceCatalog.filter {
-            $0.name.localizedCaseInsensitiveContains(searchText)
-        }
-    }
+    private static let colorPalette: [String] = [
+        "#A855F7", // Purple (Default)
+        "#E50914", // Red
+        "#1DB954", // Green
+        "#007AFF", // Blue
+        "#00C4CC", // Cyan
+        "#F5C518", // Yellow
+        "#EC4899"  // Pink
+    ]
 
     var body: some View {
         ZStack {
             AeroBackground()
 
-            if isEditing || showDetailForm {
-                detailFormView
-            } else {
-                catalogPickerView
-            }
-
-            if isScanning {
-                scanningOverlay
-            }
-        }
-        .onChange(of: selectedPhotoItem) { _, newItem in
-            guard let newItem else { return }
-            scanScreenshot(from: newItem)
-        }
-        .onAppear {
-            if let sub = subscriptionToEdit {
-                name = sub.name
-                iconName = sub.iconName
-                priceText = formatPrice(sub.price)
-                billingCycle = sub.billingCycle
-                nextBillingDate = sub.nextBillingDate
-                isFreeTrial = sub.isFreeTrial
-                if let custom = sub.customReminderDays {
-                    useCustomReminder = true
-                    customReminderDays = custom
-                }
-                showDetailForm = true
-            }
-        }
-    }
-
-    // MARK: - Catalog Picker
-
-    private var catalogPickerView: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(spacing: 16) {
-                // Scan from screenshot (PhotosPicker)
-                PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
-                    HStack(spacing: 12) {
-                        Image(systemName: "doc.text.viewfinder")
-                            .font(.title3)
-                            .frame(width: 28)
-                            .foregroundStyle(.secondary)
-                        Text(L10n.scanFromScreenshot)
-                            .font(.body.weight(.semibold))
-                        Spacer()
-                    }
-                    .aeroCard()
-                }
-                .buttonStyle(.plain)
-                .disabled(isScanning)
-
-                // Search bar
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundStyle(.secondary)
-                    TextField(L10n.searchPlaceholder, text: $searchText)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                }
-                .aeroCard()
-
-                // Catalog grid
-                VStack(spacing: 10) {
-                    ForEach(filteredCatalog) { item in
-                        Button {
-                            selectCatalogItem(item)
-                        } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: item.iconName)
-                                    .font(.title3)
-                                    .frame(width: 28)
-                                    .foregroundStyle(.secondary)
-                                Text(item.name)
-                                    .font(.body.weight(.medium))
-                                Spacer()
-                            }
-                            .aeroCard()
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 16) {
+                    if let warning = ocrWarningMessage {
+                        HStack(spacing: 10) {
+                            Image(systemName: "info.circle")
+                                .foregroundStyle(.orange)
+                            Text(warning)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                            Spacer()
                         }
-                        .buttonStyle(.plain)
+                        .aeroCard()
                     }
-                }
 
-                // Custom subscription button
-                Button {
-                    resetFormFields()
-                    ocrWarningMessage = nil
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        showDetailForm = true
-                    }
-                } label: {
-                    HStack {
-                        Spacer()
-                        Text(L10n.customSubscription)
-                            .font(.body.weight(.semibold))
-                        Spacer()
-                    }
-                    .aeroCard()
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 24)
-        }
-    }
-
-    private func selectCatalogItem(_ item: ServiceCatalogItem) {
-        name = item.name
-        iconName = item.iconName
-        billingCycle = item.defaultCycle
-
-        let price = currencySymbol == "$" ? item.defaultPriceUSD : item.defaultPriceTRY
-        priceText = formatPrice(price)
-
-        nextBillingDate = .now
-        isFreeTrial = false
-        useCustomReminder = false
-
-        withAnimation(.easeInOut(duration: 0.3)) {
-            showDetailForm = true
-        }
-    }
-
-    // MARK: - Detail Form
-
-    private var detailFormView: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(spacing: 16) {
-                if let warning = ocrWarningMessage {
-                    HStack(spacing: 10) {
-                        Image(systemName: "info.circle")
-                            .foregroundStyle(.orange)
-                        Text(warning)
-                            .font(.subheadline)
+                    // 1. Name (Top) + Compact OCR Button
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(L10n.subscriptionName)
+                            .font(.subheadline.weight(.medium))
                             .foregroundStyle(.secondary)
-                        Spacer()
-                    }
-                    .aeroCard()
-                }
 
-                // Name
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(L10n.subscriptionName)
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.secondary)
-                    TextField(L10n.namePlaceholder, text: $name)
-                        .textInputAutocapitalization(.words)
+                        HStack(spacing: 10) {
+                            Image(systemName: iconName)
+                                .font(.body.weight(.semibold))
+                                .foregroundStyle(Color(hex: colorHex))
+                                .frame(width: 22)
+
+                            TextField(L10n.namePlaceholder, text: $name)
+                                .textInputAutocapitalization(.words)
+                        }
                         .aeroCard()
-                }
 
-                // Price
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(L10n.amount)
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.secondary)
-                    TextField("0", text: $priceText)
-                        .keyboardType(.decimalPad)
-                        .aeroCard()
-                }
+                        if !isEditing {
+                            HStack(spacing: 10) {
+                                PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "doc.text.viewfinder")
+                                            .font(.subheadline)
+                                            .foregroundStyle(.secondary)
+                                        Text(L10n.scanFromScreenshot)
+                                            .font(.subheadline.weight(.medium))
+                                            .lineLimit(1)
+                                            .minimumScaleFactor(0.78)
+                                    }
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 11)
+                                    .frame(maxWidth: .infinity)
+                                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                            .stroke(.white.opacity(0.14), lineWidth: 1)
+                                    )
+                                    .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(isScanning)
 
-                // Billing Cycle
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(L10n.period)
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.secondary)
-                    Picker(L10n.period, selection: $billingCycle) {
-                        Text(L10n.monthly).tag("monthly")
-                        Text(L10n.yearly).tag("yearly")
+                                Button {
+                                    showVoiceDictation = true
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "mic.fill")
+                                            .font(.subheadline)
+                                            .foregroundStyle(Color(hex: 0xA855F7))
+                                        Text(L10n.dictate)
+                                            .font(.subheadline.weight(.medium))
+                                            .lineLimit(1)
+                                    }
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 11)
+                                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                            .stroke(.white.opacity(0.14), lineWidth: 1)
+                                    )
+                                    .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(isScanning)
+                            }
+                        }
                     }
-                    .pickerStyle(.segmented)
-                    .aeroCard()
-                }
 
-                // Free Trial Toggle
-                VStack(alignment: .leading, spacing: 6) {
+                    // 2. Compact Single-Row Preset Menu
+                    presetMenuRow
+
+                    // 3. Price
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(L10n.amount)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.secondary)
+                        TextField("0", text: $priceText)
+                            .keyboardType(.decimalPad)
+                            .aeroCard()
+                    }
+
+                    // 4. Billing Cycle
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(L10n.period)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.secondary)
+                        Picker(L10n.period, selection: $billingCycle) {
+                            Text(L10n.monthly).tag("monthly")
+                            Text(L10n.yearly).tag("yearly")
+                        }
+                        .pickerStyle(.segmented)
+                        .aeroCard()
+                    }
+
+                    // 5. Free Trial Toggle
                     Toggle(isOn: Binding(
                         get: { isFreeTrial },
                         set: { newValue in
@@ -236,77 +171,191 @@ struct AddSubscriptionView: View {
                             .font(.subheadline.weight(.medium))
                     }
                     .aeroCard()
-                }
 
-                // Date
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(isFreeTrial ? L10n.trialEndDate : L10n.nextBillingDate)
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.secondary)
-                        .animation(.easeInOut(duration: 0.25), value: isFreeTrial)
+                    // 6. Easy Date Picker
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(isFreeTrial ? L10n.trialEndDate : L10n.nextBillingDate)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .animation(.easeInOut(duration: 0.25), value: isFreeTrial)
 
-                    // Quick date shortcuts
-                    HStack(spacing: 10) {
-                        quickDateButton(title: L10n.today, date: .now)
-                        quickDateButton(
-                            title: L10n.oneWeek,
-                            date: Calendar.current.date(byAdding: .weekOfYear, value: 1, to: .now)!
+                        HStack(spacing: 10) {
+                            quickDateButton(title: L10n.today, date: .now)
+                            quickDateButton(
+                                title: L10n.oneWeek,
+                                date: Calendar.current.date(byAdding: .weekOfYear, value: 1, to: .now)!
+                            )
+                            quickDateButton(
+                                title: L10n.oneMonth,
+                                date: Calendar.current.date(byAdding: .month, value: 1, to: .now)!
+                            )
+                        }
+
+                        DatePicker(
+                            "",
+                            selection: $nextBillingDate,
+                            displayedComponents: .date
                         )
-                        quickDateButton(
-                            title: L10n.oneMonth,
-                            date: Calendar.current.date(byAdding: .month, value: 1, to: .now)!
-                        )
+                        .datePickerStyle(.compact)
+                        .labelsHidden()
+                        .aeroCard()
                     }
 
-                    DatePicker(
-                        "",
-                        selection: $nextBillingDate,
-                        displayedComponents: .date
-                    )
-                    .datePickerStyle(.compact)
-                    .labelsHidden()
-                    .aeroCard()
-                }
-
-                // Reminder
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(L10n.reminderLabel_field)
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.secondary)
-
-                    reminderPicker
-                }
-
-                // Price History (edit mode when > 1 record)
-                if let sub = subscriptionToEdit, sub.priceHistory.count > 1 {
-                    priceHistorySection(records: sub.priceHistory)
-                }
-
-                // Save
-                Button { save() } label: {
-                    Text(L10n.save)
-                        .font(.body.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .aeroCard()
-                }
-                .buttonStyle(.plain)
-                .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
-                .opacity(name.trimmingCharacters(in: .whitespaces).isEmpty ? 0.45 : 1)
-
-                // Delete (edit mode)
-                if isEditing {
-                    Button(role: .destructive) { delete() } label: {
-                        Text(L10n.delete)
+                    // 7. Custom Reminder
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(L10n.reminderLabel_field)
                             .font(.subheadline.weight(.medium))
-                            .foregroundStyle(.red)
+                            .foregroundStyle(.secondary)
+
+                        reminderPicker
+                    }
+
+                    // 8. Manual Color Picker Row
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(L10n.iconColor)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.secondary)
+
+                        HStack(spacing: 0) {
+                            ForEach(Self.colorPalette, id: \.self) { hex in
+                                Button {
+                                    withAnimation(.easeInOut(duration: 0.2)) {
+                                        colorHex = hex
+                                    }
+                                } label: {
+                                    ZStack {
+                                        Circle()
+                                            .fill(Color(hex: hex))
+                                            .frame(width: 26, height: 26)
+
+                                        if colorHex.caseInsensitiveCompare(hex) == .orderedSame {
+                                            Circle()
+                                                .stroke(Color.primary, lineWidth: 2)
+                                                .frame(width: 32, height: 32)
+                                        }
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .aeroCard()
+                    }
+
+                    // 9. Price History (edit mode when > 1 record)
+                    if let sub = subscriptionToEdit, sub.priceHistory.count > 1 {
+                        priceHistorySection(records: sub.priceHistory)
+                    }
+
+                    // 10. Save
+                    Button { save() } label: {
+                        Text(L10n.save)
+                            .font(.body.weight(.semibold))
                             .frame(maxWidth: .infinity)
                             .aeroCard()
                     }
                     .buttonStyle(.plain)
+                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .opacity(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.45 : 1)
+
+                    // 11. Delete (edit mode)
+                    if isEditing {
+                        Button(role: .destructive) { delete() } label: {
+                            Text(L10n.delete)
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(.red)
+                                .frame(maxWidth: .infinity)
+                                .aeroCard()
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 24)
+                .padding(.vertical, 24)
+            }
+            .scrollDismissesKeyboard(.interactively)
+
+            if isScanning {
+                scanningOverlay
+            }
+        }
+        .onChange(of: selectedPhotoItem) { _, newItem in
+            guard let newItem else { return }
+            scanScreenshot(from: newItem)
+        }
+        .fullScreenCover(isPresented: $showVoiceDictation) {
+            VoiceDictationView { parsed in
+                applyParsedSubscription(parsed)
+            }
+        }
+        .onAppear {
+            guard !hasLoadedInitialData else { return }
+            hasLoadedInitialData = true
+
+            if let sub = subscriptionToEdit {
+                name = sub.name
+                iconName = sub.iconName
+                colorHex = sub.colorHex
+                priceText = formatPrice(sub.price)
+                billingCycle = sub.billingCycle
+                nextBillingDate = sub.nextBillingDate
+                isFreeTrial = sub.isFreeTrial
+                if let custom = sub.customReminderDays {
+                    useCustomReminder = true
+                    customReminderDays = custom
+                }
+            } else if let prefilled = prefilledData {
+                applyParsedSubscription(prefilled)
+            }
+        }
+    }
+
+    // MARK: - Preset Popup Menu
+
+    private var presetMenuRow: some View {
+        Menu {
+            ForEach(serviceCatalog) { item in
+                Button {
+                    selectCatalogItem(item)
+                } label: {
+                    Label {
+                        Text(item.name)
+                    } icon: {
+                        Image(systemName: item.iconName)
+                            .foregroundStyle(Color(hex: item.colorHex))
+                    }
                 }
             }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 24)
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "square.grid.2x2")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                Text(L10n.choosePreset)
+                    .font(.subheadline.weight(.medium))
+
+                Spacer()
+
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .aeroCard()
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func selectCatalogItem(_ item: ServiceCatalogItem) {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            name = item.name
+            iconName = item.iconName
+            colorHex = item.colorHex
+            billingCycle = item.defaultCycle
+
+            let price = currencySymbol == "$" ? item.defaultPriceUSD : item.defaultPriceTRY
+            priceText = formatPrice(price)
+            ocrWarningMessage = nil
         }
     }
 
@@ -335,7 +384,6 @@ struct AddSubscriptionView: View {
 
     private var reminderPicker: some View {
         VStack(spacing: 8) {
-            // Default option
             Button {
                 useCustomReminder = false
             } label: {
@@ -355,7 +403,6 @@ struct AddSubscriptionView: View {
             }
             .buttonStyle(.plain)
 
-            // Custom options
             ForEach([0, 1, 3, 7], id: \.self) { days in
                 Button {
                     useCustomReminder = true
@@ -417,12 +464,7 @@ struct AddSubscriptionView: View {
                 if let parsed = parsedResult, hasDetectedData(parsed) {
                     applyParsedSubscription(parsed)
                 } else {
-                    resetFormFields()
                     ocrWarningMessage = L10n.ocrNoDataFound
-                }
-
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    showDetailForm = true
                 }
             }
         }
@@ -437,29 +479,24 @@ struct AddSubscriptionView: View {
     }
 
     private func applyParsedSubscription(_ parsed: ParsedSubscription) {
-        name = parsed.name ?? ""
+        if let parsedName = parsed.name {
+            name = parsedName
+        }
         iconName = parsed.iconName ?? "creditcard"
-        priceText = parsed.price.map { formatPrice($0) } ?? ""
+        colorHex = parsed.colorHex ?? "#A855F7"
+        if let parsedPrice = parsed.price {
+            priceText = formatPrice(parsedPrice)
+        }
         billingCycle = parsed.billingCycle
-        nextBillingDate = parsed.nextBillingDate ?? .now
+        if let parsedDate = parsed.nextBillingDate {
+            nextBillingDate = parsedDate
+        }
         isFreeTrial = parsed.isFreeTrial
         if parsed.isFreeTrial {
             useCustomReminder = true
             customReminderDays = 1
-        } else {
-            useCustomReminder = false
         }
         ocrWarningMessage = nil
-    }
-
-    private func resetFormFields() {
-        name = ""
-        iconName = "creditcard"
-        priceText = ""
-        billingCycle = "monthly"
-        nextBillingDate = .now
-        isFreeTrial = false
-        useCustomReminder = false
     }
 
     // MARK: - Price History Section
@@ -522,17 +559,21 @@ struct AddSubscriptionView: View {
     // MARK: - Actions
 
     private func save() {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else { return }
+
         let parsedPrice = parsePrice(priceText)
         let resolvedReminder: Int? = useCustomReminder ? customReminderDays : nil
 
         let targetSub: Subscription
         if let sub = subscriptionToEdit {
             let previousPrice = sub.price
-            sub.name = name.trimmingCharacters(in: .whitespaces)
+            sub.name = trimmedName
             sub.price = parsedPrice
             sub.billingCycle = billingCycle
             sub.nextBillingDate = nextBillingDate
             sub.iconName = iconName
+            sub.colorHex = colorHex
             sub.isFreeTrial = isFreeTrial
             sub.customReminderDays = resolvedReminder
 
@@ -547,11 +588,12 @@ struct AddSubscriptionView: View {
         } else {
             let initialHistory = [PriceRecord(price: parsedPrice, date: .now)]
             let newSub = Subscription(
-                name: name.trimmingCharacters(in: .whitespaces),
+                name: trimmedName,
                 price: parsedPrice,
                 billingCycle: billingCycle,
                 nextBillingDate: nextBillingDate,
                 iconName: iconName,
+                colorHex: colorHex,
                 isFreeTrial: isFreeTrial,
                 customReminderDays: resolvedReminder,
                 priceHistory: initialHistory
@@ -559,6 +601,8 @@ struct AddSubscriptionView: View {
             modelContext.insert(newSub)
             targetSub = newSub
         }
+
+        try? modelContext.save()
 
         NotificationManager.shared.scheduleNotification(
             for: targetSub,
@@ -573,6 +617,7 @@ struct AddSubscriptionView: View {
         if let sub = subscriptionToEdit {
             NotificationManager.shared.cancelNotification(for: sub)
             modelContext.delete(sub)
+            try? modelContext.save()
         }
         dismiss()
     }
@@ -580,7 +625,33 @@ struct AddSubscriptionView: View {
     // MARK: - Price Helpers
 
     private func parsePrice(_ text: String) -> Double {
-        let normalized = text.replacingOccurrences(of: ",", with: ".")
+        let cleaned = text
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .filter { $0.isNumber || $0 == "," || $0 == "." }
+
+        guard !cleaned.isEmpty else { return 0 }
+
+        let dotCount = cleaned.filter { $0 == "." }.count
+        let commaCount = cleaned.filter { $0 == "," }.count
+
+        let normalized: String
+        if dotCount > 0 && commaCount > 0 {
+            if let lastDot = cleaned.lastIndex(of: "."),
+               let lastComma = cleaned.lastIndex(of: ",") {
+                if lastComma > lastDot {
+                    normalized = cleaned
+                        .replacingOccurrences(of: ".", with: "")
+                        .replacingOccurrences(of: ",", with: ".")
+                } else {
+                    normalized = cleaned.replacingOccurrences(of: ",", with: "")
+                }
+            } else {
+                normalized = cleaned.replacingOccurrences(of: ",", with: ".")
+            }
+        } else {
+            normalized = cleaned.replacingOccurrences(of: ",", with: ".")
+        }
+
         return Double(normalized) ?? 0
     }
 

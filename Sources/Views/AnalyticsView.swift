@@ -35,7 +35,7 @@ struct AnalyticsView: View {
         let total = totalMonthly
         guard total > 0 else { return [] }
 
-        return sortedPaid.enumerated().map { index, sub in
+        return sortedPaid.map { sub in
             let monthly = monthlyCost(of: sub)
             let share = Int(((monthly / total) * 100).rounded())
             return ChartSlice(
@@ -43,7 +43,7 @@ struct AnalyticsView: View {
                 name: sub.name,
                 monthlyAmount: monthly,
                 sharePercent: share,
-                color: Self.chartPalette[index % Self.chartPalette.count]
+                color: Color(hex: sub.colorHex)
             )
         }
     }
@@ -61,6 +61,7 @@ struct AnalyticsView: View {
                     id: sub.id,
                     name: sub.name,
                     iconName: sub.iconName,
+                    colorHex: sub.colorHex,
                     firstPrice: first.price,
                     lastPrice: last.price,
                     lastDate: last.date,
@@ -241,8 +242,8 @@ struct AnalyticsView: View {
                     ForEach(Array(priceChangedSubscriptions.enumerated()), id: \.element.id) { index, item in
                         HStack(spacing: 8) {
                             Image(systemName: item.iconName)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(Color(hex: item.colorHex))
                                 .frame(width: 20)
 
                             Text("\(item.name) • \(currencySymbol)\(formattedPrice(item.firstPrice)) → \(currencySymbol)\(formattedPrice(item.lastPrice))")
@@ -350,22 +351,12 @@ struct AnalyticsView: View {
         let id: UUID
         let name: String
         let iconName: String
+        let colorHex: String
         let firstPrice: Double
         let lastPrice: Double
         let lastDate: Date
         let percentChange: Int?
     }
-
-    private static let chartPalette: [Color] = [
-        .purple,
-        .cyan,
-        .indigo,
-        .mint,
-        .pink,
-        .blue,
-        .teal,
-        .orange
-    ]
 }
 
 #Preview {

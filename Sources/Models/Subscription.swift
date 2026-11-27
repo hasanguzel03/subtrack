@@ -21,8 +21,9 @@ final class Subscription {
     var billingCycle: String   // "monthly" or "yearly"
     var nextBillingDate: Date
     var createdAt: Date
-    var iconName: String
-    var isFreeTrial: Bool
+    var iconName: String = "creditcard"
+    var colorHex: String = "#A855F7"
+    var isFreeTrial: Bool = false
     var customReminderDays: Int?
     var priceHistory: [PriceRecord] = []
 
@@ -34,6 +35,7 @@ final class Subscription {
         nextBillingDate: Date = .now,
         createdAt: Date = .now,
         iconName: String = "creditcard",
+        colorHex: String = "#A855F7",
         isFreeTrial: Bool = false,
         customReminderDays: Int? = nil,
         priceHistory: [PriceRecord] = []
@@ -45,6 +47,7 @@ final class Subscription {
         self.nextBillingDate = nextBillingDate
         self.createdAt = createdAt
         self.iconName = iconName
+        self.colorHex = colorHex
         self.isFreeTrial = isFreeTrial
         self.customReminderDays = customReminderDays
         self.priceHistory = priceHistory

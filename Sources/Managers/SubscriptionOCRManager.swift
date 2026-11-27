@@ -8,6 +8,7 @@ import Vision
 struct ParsedSubscription: Sendable {
     var name: String?
     var iconName: String?
+    var colorHex: String?
     var price: Double?
     var billingCycle: String = "monthly"
     var nextBillingDate: Date?
@@ -61,24 +62,44 @@ final class SubscriptionOCRManager: Sendable {
         }.value
 
         let fullText = lines.joined(separator: "\n")
-        return parseSubscription(from: fullText)
+        return parseText(fullText)
     }
 
-    func parseSubscription(from text: String) -> ParsedSubscription {
+    /// Shared smart parser used by both Screenshot OCR and Voice Dictation.
+    func parseText(_ text: String) -> ParsedSubscription {
         var result = ParsedSubscription()
 
-        let matchedService = matchService(in: text)
-        result.name = matchedService?.name
-        result.iconName = matchedService?.iconName
-        result.price = extractPrice(from: text)
+        let dateExtraction = extractDateAndRanges(from: text)
+        result.nextBillingDate = dateExtraction.date
+
+        if let matchedService = matchService(in: text) {
+            result.name = matchedService.name
+            result.iconName = matchedService.iconName
+            result.colorHex = matchedService.colorHex
+        } else {
+            result.name = extractFirstMeaningfulWord(from: text, excluding: dateExtraction.ranges)
+        }
+
+        result.price = extractPrice(from: text, excluding: dateExtraction.ranges)
         result.billingCycle = extractBillingCycle(from: text)
         result.isFreeTrial = detectFreeTrial(in: text)
-        result.nextBillingDate = extractDate(from: text)
 
         return result
     }
 
-    // MARK: - 1. Service Match
+    // MARK: - 1. Service Match & Fallback Name
+
+    private static let catalogAliases: [(keyword: String, catalogName: String)] = [
+        ("youtube", "YouTube Premium"),
+        ("chatgpt", "ChatGPT Plus"),
+        ("duolingo", "Duolingo Super"),
+        ("xbox", "Xbox Game Pass"),
+        ("playstation", "PlayStation Plus"),
+        ("ps plus", "PlayStation Plus"),
+        ("canva", "Canva Pro"),
+        ("adobe", "Adobe Creative Cloud"),
+        ("amazon", "Amazon Prime")
+    ]
 
     private func matchService(in text: String) -> ServiceCatalogItem? {
         let sortedCatalog = serviceCatalog.sorted { $0.name.count > $1.name.count }
@@ -109,38 +130,109 @@ final class SubscriptionOCRManager: Sendable {
             }
         }
 
-        return nil
-    }
-
-    // MARK: - 2. Price Extraction
-
-    private func extractPrice(from text: String) -> Double? {
-        let currency = "(?:₺|US\\$|\\$|€|£|(?<![\\p{L}\\p{N}])(?:TL|TRY|USD|EUR)(?![\\p{L}\\p{N}]))"
-        let number = "(?<![\\d.,])(\\d{1,3}(?:[.,]\\d{3})*(?:[.,]\\d{1,2})?|\\d+(?:[.,]\\d{1,2})?)(?![\\d.,])"
-        let pattern = "(?:\(currency)\\s*\(number)|\(number)\\s*\(currency))"
-
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
-            return nil
-        }
-
-        let nsText = text as NSString
-        let matches = regex.matches(in: text, range: NSRange(location: 0, length: nsText.length))
-
-        var candidates: [Double] = []
-        for match in matches {
-            for groupIndex in [1, 2] {
-                let range = match.range(at: groupIndex)
-                if range.location != NSNotFound {
-                    let rawNumber = nsText.substring(with: range)
-                    if let parsed = parseAmount(rawNumber) {
-                        candidates.append(parsed)
-                    }
-                    break
-                }
+        // Pass 4: Spoken/short aliases (e.g. "YouTube 79,99" -> "YouTube Premium")
+        for alias in Self.catalogAliases {
+            let escaped = NSRegularExpression.escapedPattern(for: alias.keyword)
+            let pattern = "(?<![\\p{L}\\p{N}])\(escaped)(?![\\p{L}\\p{N}])"
+            if firstRegexMatch(pattern: pattern, in: text, options: [.caseInsensitive]) != nil,
+               let item = serviceCatalog.first(where: { $0.name == alias.catalogName }) {
+                return item
             }
         }
 
-        return candidates.first(where: { $0 > 0 }) ?? candidates.first
+        return nil
+    }
+
+    private func extractFirstMeaningfulWord(from text: String, excluding dateRanges: [NSRange]) -> String? {
+        let masked = maskRanges(dateRanges, in: text)
+        let separators = CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters).union(.symbols)
+        let tokens = masked.components(separatedBy: separators)
+
+        for rawToken in tokens {
+            let token = rawToken.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard token.count >= 2 else { continue }
+
+            let hasLetter = token.unicodeScalars.contains { CharacterSet.letters.contains($0) }
+            guard hasLetter else { continue }
+
+            let trLower = token.lowercased(with: Locale(identifier: "tr_TR"))
+            let enLower = token.lowercased(with: Locale(identifier: "en_US"))
+
+            if Self.ignoredNameTokens.contains(trLower) || Self.ignoredNameTokens.contains(enLower) {
+                continue
+            }
+
+            return token.prefix(1).uppercased(with: Locale.current) + token.dropFirst()
+        }
+
+        return nil
+    }
+
+    private static let ignoredNameTokens: Set<String> = [
+        "tl", "try", "usd", "eur", "gbp",
+        "ay", "aylık", "yıl", "yıllık", "month", "monthly", "year", "yearly", "annual", "yr",
+        "ücretsiz", "deneme", "free", "trial",
+        "ocak", "şubat", "mart", "nisan", "mayıs", "haziran",
+        "temmuz", "ağustos", "eylül", "ekim", "kasım", "aralık",
+        "oca", "şub", "mar", "nis", "may", "haz", "tem", "ağu", "eyl", "eki", "kas", "ara",
+        "january", "february", "march", "april", "june", "july",
+        "august", "september", "october", "november", "december",
+        "jan", "feb", "apr", "aug", "sep", "oct", "nov", "dec"
+    ]
+
+    // MARK: - 2. Price Extraction
+
+    private func extractPrice(from text: String, excluding dateRanges: [NSRange]) -> Double? {
+        // 1. Prefer explicit currency-tagged prices
+        let currency = "(?:₺|US\\$|\\$|€|£|(?<![\\p{L}\\p{N}])(?:TL|TRY|USD|EUR)(?![\\p{L}\\p{N}]))"
+        let number = "(?<![\\d.,/])(\\d{1,3}(?:[.,]\\d{3})*(?:[.,]\\d{1,2})?|\\d+(?:[.,]\\d{1,2})?)(?![\\d.,/])"
+        let currencyPattern = "(?:\(currency)\\s*\(number)|\(number)\\s*\(currency))"
+
+        if let regex = try? NSRegularExpression(pattern: currencyPattern, options: [.caseInsensitive]) {
+            let nsText = text as NSString
+            let matches = regex.matches(in: text, range: NSRange(location: 0, length: nsText.length))
+
+            var taggedCandidates: [Double] = []
+            for match in matches {
+                for groupIndex in [1, 2] {
+                    let range = match.range(at: groupIndex)
+                    if range.location != NSNotFound {
+                        let rawNumber = nsText.substring(with: range)
+                        if let parsed = parseAmount(rawNumber) {
+                            taggedCandidates.append(parsed)
+                        }
+                        break
+                    }
+                }
+            }
+
+            if let positive = taggedCandidates.first(where: { $0 > 0 }) ?? taggedCandidates.first {
+                return positive
+            }
+        }
+
+        // 2. Fallback for dictation without currency symbol (e.g. "Spotify, 24 Kasım, 10.99")
+        let masked = maskRanges(dateRanges, in: text)
+        let bareNumberPattern = "(?<![\\d.,:/-])(\\d+(?:[.,]\\d{1,2})?)(?![\\d.,:/-]|\\s*(?:GB|TB|MB)(?![\\p{L}\\p{N}]))"
+        if let regex = try? NSRegularExpression(pattern: bareNumberPattern, options: [.caseInsensitive]) {
+            let nsText = masked as NSString
+            let matches = regex.matches(in: masked, range: NSRange(location: 0, length: nsText.length))
+
+            var bareCandidates: [Double] = []
+            for match in matches {
+                let raw = nsText.substring(with: match.range(at: 1))
+                if let parsed = parseAmount(raw) {
+                    bareCandidates.append(parsed)
+                }
+            }
+
+            // Pick the last spoken numeric amount (after ignoring date numbers)
+            if let last = bareCandidates.last {
+                return last
+            }
+        }
+
+        return nil
     }
 
     private func parseAmount(_ raw: String) -> Double? {
@@ -152,7 +244,6 @@ final class SubscriptionOCRManager: Sendable {
 
         let normalized: String
         if dotCount > 0 && commaCount > 0 {
-            // Both separators present: the last one is the decimal separator
             if let lastDot = trimmed.lastIndex(of: "."),
                let lastComma = trimmed.lastIndex(of: ",") {
                 if lastComma > lastDot {
@@ -168,7 +259,6 @@ final class SubscriptionOCRManager: Sendable {
         } else if commaCount == 1 {
             let parts = trimmed.split(separator: ",", omittingEmptySubsequences: false)
             if parts.count == 2 && parts[1].count == 3 {
-                // Thousands separator (e.g. "1,200")
                 normalized = trimmed.replacingOccurrences(of: ",", with: "")
             } else {
                 normalized = trimmed.replacingOccurrences(of: ",", with: ".")
@@ -176,13 +266,11 @@ final class SubscriptionOCRManager: Sendable {
         } else if dotCount == 1 {
             let parts = trimmed.split(separator: ".", omittingEmptySubsequences: false)
             if parts.count == 2 && parts[1].count == 3 {
-                // Thousands separator (e.g. "1.200")
                 normalized = trimmed.replacingOccurrences(of: ".", with: "")
             } else {
                 normalized = trimmed
             }
         } else {
-            // Multiple of the same separator (e.g. "1.200.000")
             normalized = trimmed
                 .replacingOccurrences(of: ".", with: "")
                 .replacingOccurrences(of: ",", with: "")
@@ -233,14 +321,14 @@ final class SubscriptionOCRManager: Sendable {
 
     // MARK: - 5. Date Extraction
 
-    private func extractDate(from text: String) -> Date? {
-        if let detected = detectDateWithDataDetector(in: text) {
-            return detected
+    private func extractDateAndRanges(from text: String) -> (date: Date?, ranges: [NSRange]) {
+        if let detectorResult = detectDateWithDataDetector(in: text), detectorResult.date != nil {
+            return detectorResult
         }
         return extractDateWithRegexFallback(in: text)
     }
 
-    private func detectDateWithDataDetector(in text: String) -> Date? {
+    private func detectDateWithDataDetector(in text: String) -> (date: Date?, ranges: [NSRange])? {
         guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.date.rawValue) else {
             return nil
         }
@@ -249,7 +337,7 @@ final class SubscriptionOCRManager: Sendable {
         let matches = detector.matches(in: text, range: NSRange(location: 0, length: nsText.length))
         let startOfToday = Calendar.current.startOfDay(for: .now)
 
-        var candidates: [Date] = []
+        var candidates: [(date: Date, range: NSRange)] = []
         for match in matches {
             guard let date = match.date else { continue }
             let snippet = nsText.substring(with: match.range)
@@ -260,13 +348,15 @@ final class SubscriptionOCRManager: Sendable {
                 continue
             }
 
-            candidates.append(date)
+            candidates.append((date, match.range))
         }
 
-        return candidates.first(where: { $0 >= startOfToday }) ?? candidates.first
+        guard !candidates.isEmpty else { return nil }
+        let chosen = candidates.first(where: { $0.date >= startOfToday }) ?? candidates.first
+        return (chosen?.date, candidates.map { $0.range })
     }
 
-    private func extractDateWithRegexFallback(in text: String) -> Date? {
+    private func extractDateWithRegexFallback(in text: String) -> (date: Date?, ranges: [NSRange]) {
         // Numeric dd.MM.yyyy / dd/MM/yyyy / dd-MM-yyyy
         let numericPattern = "(?<!\\d)(\\d{1,2})[./-](\\d{1,2})[./-](\\d{2,4})(?!\\d)"
         if let regex = try? NSRegularExpression(pattern: numericPattern) {
@@ -293,52 +383,95 @@ final class SubscriptionOCRManager: Sendable {
                 components.day = day
 
                 if let date = calendar.date(from: components) {
-                    return date
+                    return (date, [match.range])
                 }
             }
         }
 
-        // Month-name fallback across Turkish and English locales (e.g. "12 Aralık 2026", "Dec 12, 2026")
+        // Month-name fallback across Turkish and English locales (with or without year, e.g. "24 Kasım", "15 December", "12 Aralık 2026")
         let candidatePatterns = [
-            "(?<![\\p{L}\\d])\\d{1,2}\\s+[\\p{L}]{3,}\\s+\\d{4}(?!\\d)",
-            "(?<![\\p{L}\\d])[\\p{L}]{3,}\\s+\\d{1,2},?\\s+\\d{4}(?!\\d)"
+            "(?<![\\p{L}\\d])\\d{1,2}\\s+[\\p{L}]{3,}(?:\\s+\\d{4})?(?!\\d)",
+            "(?<![\\p{L}\\d])[\\p{L}]{3,}\\s+\\d{1,2}(?:,?\\s+\\d{4})?(?!\\d)"
         ]
 
-        var dateStrings: [String] = []
         let nsText = text as NSString
+        var matchedCandidates: [(text: String, range: NSRange)] = []
         for pattern in candidatePatterns {
             if let regex = try? NSRegularExpression(pattern: pattern) {
                 let matches = regex.matches(in: text, range: NSRange(location: 0, length: nsText.length))
                 for match in matches {
-                    dateStrings.append(nsText.substring(with: match.range))
+                    matchedCandidates.append((nsText.substring(with: match.range), match.range))
                 }
             }
         }
 
-        let localeFormats: [(locale: String, formats: [String])] = [
+        let yearFormats: [(locale: String, formats: [String])] = [
             ("tr_TR", ["d MMMM yyyy", "d MMM yyyy"]),
             ("en_US", ["MMMM d, yyyy", "MMM d, yyyy", "MMMM d yyyy", "MMM d yyyy", "d MMMM yyyy", "d MMM yyyy"])
         ]
 
-        for (localeId, formats) in localeFormats {
+        for (localeId, formats) in yearFormats {
             let formatter = DateFormatter()
             formatter.locale = Locale(identifier: localeId)
             formatter.isLenient = false
 
             for format in formats {
                 formatter.dateFormat = format
-                for candidate in dateStrings {
-                    if let date = formatter.date(from: candidate) {
-                        return date
+                for candidate in matchedCandidates {
+                    if let date = formatter.date(from: candidate.text) {
+                        return (date, [candidate.range])
                     }
                 }
             }
         }
 
-        return nil
+        let currentYear = Calendar.current.component(.year, from: .now)
+        let yearlessFormats: [(locale: String, formats: [String])] = [
+            ("tr_TR", ["d MMMM", "d MMM"]),
+            ("en_US", ["d MMMM", "d MMM", "MMMM d", "MMM d"])
+        ]
+
+        for (localeId, formats) in yearlessFormats {
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: localeId)
+            formatter.isLenient = false
+            formatter.defaultDate = Calendar.current.date(from: DateComponents(year: currentYear, month: 1, day: 1))
+
+            for format in formats {
+                formatter.dateFormat = format
+                for candidate in matchedCandidates {
+                    if let parsedDate = formatter.date(from: candidate.text) {
+                        let resolved = resolveYearForYearlessDate(parsedDate)
+                        return (resolved, [candidate.range])
+                    }
+                }
+            }
+        }
+
+        return (nil, [])
     }
 
-    // MARK: - Regex Utility
+    private func resolveYearForYearlessDate(_ date: Date) -> Date {
+        let calendar = Calendar.current
+        let month = calendar.component(.month, from: date)
+        let day = calendar.component(.day, from: date)
+        let currentYear = calendar.component(.year, from: .now)
+
+        let components = DateComponents(year: currentYear, month: month, day: day)
+        return calendar.date(from: components) ?? date
+    }
+
+    // MARK: - String & Regex Utilities
+
+    private func maskRanges(_ ranges: [NSRange], in text: String) -> String {
+        guard !ranges.isEmpty else { return text }
+        let mutable = NSMutableString(string: text)
+        for range in ranges where range.location != NSNotFound && range.location + range.length <= mutable.length {
+            let spaces = String(repeating: " ", count: range.length)
+            mutable.replaceCharacters(in: range, with: spaces)
+        }
+        return mutable as String
+    }
 
     private func firstRegexMatch(
         pattern: String,

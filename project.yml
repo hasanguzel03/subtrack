@@ -9,6 +9,11 @@ targets:
     platform: iOS
     sources:
       - Sources
+    info:
+      path: Info.plist
+      properties:
+        NSMicrophoneUsageDescription: "Aboneliklerini sesinle hızlıca ekleyebilmek için mikrofon erişimi gerekiyor."
+        NSSpeechRecognitionUsageDescription: "Söylediğin abonelik adı, tarih ve tutarı metne çevirmek için konuşma tanıma izni gerekiyor."
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.hasan.subtrack
