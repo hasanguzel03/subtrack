@@ -38,19 +38,46 @@ struct AeroCardModifier: ViewModifier {
     @Environment(\.colorScheme) private var colorScheme
 
     func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+
         content
             .padding(16)
             .frame(maxWidth: .infinity)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 15, style: .continuous)
-                    .stroke(
-                        colorScheme == .dark
-                            ? Color.white.opacity(0.15)
-                            : Color.black.opacity(0.08),
-                        lineWidth: 1
-                    )
-            )
+            .background {
+                ZStack {
+                    shape
+                        .fill(.ultraThinMaterial.opacity(colorScheme == .dark ? 0.72 : 0.78))
+
+                    shape
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(colorScheme == .dark ? 0.06 : 0.28),
+                                    Color.white.opacity(0.01)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                }
+            }
+            .overlay {
+                shape
+                    .stroke(specularBorder, lineWidth: 1)
+            }
+    }
+
+    private var specularBorder: LinearGradient {
+        let topLeadingOpacity = colorScheme == .dark ? 0.35 : 0.75
+        return LinearGradient(
+            stops: [
+                .init(color: .white.opacity(topLeadingOpacity), location: 0.0),
+                .init(color: .white.opacity(0.05), location: 0.5),
+                .init(color: .white.opacity(0.15), location: 1.0)
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
     }
 }
 

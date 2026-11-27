@@ -65,6 +65,12 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate, @un
             .removePendingNotificationRequests(withIdentifiers: [subscriptionId.uuidString])
     }
 
+    func cancelAllNotifications() {
+        let center = UNUserNotificationCenter.current()
+        center.removeAllPendingNotificationRequests()
+        center.removeAllDeliveredNotifications()
+    }
+
     func rescheduleAll(
         subscriptions: [Subscription],
         defaultReminderDays: Int,

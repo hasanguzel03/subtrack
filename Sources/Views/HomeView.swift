@@ -3,11 +3,13 @@ import SwiftData
 
 struct HomeView: View {
     @AppStorage("currencySymbol") private var currencySymbol = "₺"
+    @AppStorage("appLanguage") private var appLanguage = "tr"
     @Query(sort: \Subscription.nextBillingDate) private var subscriptions: [Subscription]
 
     @State private var showYearly = false
     @State private var showProAlert = false
     @State private var showAddSheet = false
+    @State private var showAnalytics = false
     @State private var showSettings = false
     @State private var selectedSubscription: Subscription?
 
@@ -47,8 +49,15 @@ struct HomeView: View {
 
             VStack(spacing: 0) {
                 // Top bar
-                HStack {
+                HStack(spacing: 16) {
                     Spacer()
+
+                    Button { showAnalytics = true } label: {
+                        Image(systemName: "chart.pie")
+                            .font(.body.weight(.medium))
+                            .foregroundStyle(.secondary)
+                    }
+
                     Button { showSettings = true } label: {
                         Image(systemName: "gearshape")
                             .font(.body.weight(.medium))
@@ -107,6 +116,9 @@ struct HomeView: View {
                                 .opacity(0.45)
                         }
                         .buttonStyle(.plain)
+
+                        RotatingTipView()
+                            .padding(.top, 8)
                     }
                     .padding(.horizontal, 24)
                     .padding(.top, 16)
@@ -125,6 +137,10 @@ struct HomeView: View {
         }
         .sheet(item: $selectedSubscription) { sub in
             AddSubscriptionView(subscriptionToEdit: sub)
+        }
+        .sheet(isPresented: $showAnalytics) {
+            AnalyticsView()
+                .presentationDetents([.large])
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
@@ -180,46 +196,58 @@ struct HomeView: View {
         return String(format: "%.2f", value)
     }
 
+    private func formattedTotalPrice(_ value: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.locale = Locale(identifier: appLanguage == "tr" ? "tr_TR" : "en_US")
+        formatter.usesGroupingSeparator = true
+        formatter.minimumFractionDigits = value == value.rounded() ? 0 : 2
+        formatter.maximumFractionDigits = 2
+        return formatter.string(from: NSNumber(value: value)) ?? formattedPrice(value)
+    }
+
     // MARK: - Total Bar
 
     private var totalBar: some View {
-        VStack(spacing: 10) {
-            Line()
-                .stroke(style: StrokeStyle(lineWidth: 1, dash: [6, 6]))
-                .foregroundStyle(.secondary.opacity(0.5))
-                .frame(height: 1)
-                .padding(.horizontal, 32)
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("+")
+                    .font(.title3.weight(.medium))
+                    .foregroundStyle(.secondary.opacity(0.65))
+
+                Rectangle()
+                    .fill(.secondary.opacity(0.35))
+                    .frame(height: 1)
+            }
 
             Button {
                 withAnimation(.easeInOut(duration: 0.3)) {
                     showYearly.toggle()
                 }
             } label: {
-                Group {
-                    if showYearly {
-                        Text(L10n.totalYearly(formattedPrice(totalYearly), currencySymbol))
-                    } else {
-                        Text(L10n.totalMonthly(formattedPrice(totalMonthly), currencySymbol))
+                HStack {
+                    Text(L10n.totalLabel)
+                        .font(.title3.weight(.semibold))
+
+                    Spacer()
+
+                    Group {
+                        if showYearly {
+                            Text(L10n.amountYearly(formattedTotalPrice(totalYearly), currencySymbol))
+                        } else {
+                            Text(L10n.amountMonthly(formattedTotalPrice(totalMonthly), currencySymbol))
+                        }
                     }
+                    .font(.title3.weight(.bold))
+                    .contentTransition(.numericText())
                 }
-                .font(.title3.weight(.bold))
-                .contentTransition(.numericText())
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .padding(.bottom, 16)
         }
+        .padding(.horizontal, 24)
         .padding(.top, 4)
-    }
-}
-
-// MARK: - Dashed Line Shape
-
-private struct Line: Shape {
-    func path(in rect: CGRect) -> Path {
-        Path { p in
-            p.move(to: CGPoint(x: 0, y: rect.midY))
-            p.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
-        }
     }
 }
 

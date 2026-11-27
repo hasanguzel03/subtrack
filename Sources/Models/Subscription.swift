@@ -1,6 +1,18 @@
 import Foundation
 import SwiftData
 
+struct PriceRecord: Codable, Identifiable, Hashable {
+    var id: UUID
+    var price: Double
+    var date: Date
+
+    init(id: UUID = UUID(), price: Double, date: Date = .now) {
+        self.id = id
+        self.price = price
+        self.date = date
+    }
+}
+
 @Model
 final class Subscription {
     var id: UUID
@@ -12,6 +24,7 @@ final class Subscription {
     var iconName: String
     var isFreeTrial: Bool
     var customReminderDays: Int?
+    var priceHistory: [PriceRecord] = []
 
     init(
         id: UUID = UUID(),
@@ -22,7 +35,8 @@ final class Subscription {
         createdAt: Date = .now,
         iconName: String = "creditcard",
         isFreeTrial: Bool = false,
-        customReminderDays: Int? = nil
+        customReminderDays: Int? = nil,
+        priceHistory: [PriceRecord] = []
     ) {
         self.id = id
         self.name = name
@@ -33,5 +47,6 @@ final class Subscription {
         self.iconName = iconName
         self.isFreeTrial = isFreeTrial
         self.customReminderDays = customReminderDays
+        self.priceHistory = priceHistory
     }
 }

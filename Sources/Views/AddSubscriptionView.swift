@@ -1,5 +1,7 @@
-import SwiftUI
+import PhotosUI
 import SwiftData
+import SwiftUI
+import UIKit
 
 struct AddSubscriptionView: View {
     @Environment(\.modelContext) private var modelContext
@@ -25,6 +27,11 @@ struct AddSubscriptionView: View {
     // Catalog search
     @State private var searchText: String = ""
 
+    // OCR screenshot import
+    @State private var selectedPhotoItem: PhotosPickerItem?
+    @State private var isScanning: Bool = false
+    @State private var ocrWarningMessage: String?
+
     private var isEditing: Bool { subscriptionToEdit != nil }
 
     private var filteredCatalog: [ServiceCatalogItem] {
@@ -43,6 +50,14 @@ struct AddSubscriptionView: View {
             } else {
                 catalogPickerView
             }
+
+            if isScanning {
+                scanningOverlay
+            }
+        }
+        .onChange(of: selectedPhotoItem) { _, newItem in
+            guard let newItem else { return }
+            scanScreenshot(from: newItem)
         }
         .onAppear {
             if let sub = subscriptionToEdit {
@@ -66,6 +81,22 @@ struct AddSubscriptionView: View {
     private var catalogPickerView: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: 16) {
+                // Scan from screenshot (PhotosPicker)
+                PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "doc.text.viewfinder")
+                            .font(.title3)
+                            .frame(width: 28)
+                            .foregroundStyle(.secondary)
+                        Text(L10n.scanFromScreenshot)
+                            .font(.body.weight(.semibold))
+                        Spacer()
+                    }
+                    .aeroCard()
+                }
+                .buttonStyle(.plain)
+                .disabled(isScanning)
+
                 // Search bar
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
@@ -99,13 +130,8 @@ struct AddSubscriptionView: View {
 
                 // Custom subscription button
                 Button {
-                    name = ""
-                    iconName = "creditcard"
-                    priceText = ""
-                    billingCycle = "monthly"
-                    nextBillingDate = .now
-                    isFreeTrial = false
-                    useCustomReminder = false
+                    resetFormFields()
+                    ocrWarningMessage = nil
                     withAnimation(.easeInOut(duration: 0.3)) {
                         showDetailForm = true
                     }
@@ -147,6 +173,18 @@ struct AddSubscriptionView: View {
     private var detailFormView: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: 16) {
+                if let warning = ocrWarningMessage {
+                    HStack(spacing: 10) {
+                        Image(systemName: "info.circle")
+                            .foregroundStyle(.orange)
+                        Text(warning)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    .aeroCard()
+                }
+
                 // Name
                 VStack(alignment: .leading, spacing: 6) {
                     Text(L10n.subscriptionName)
@@ -237,6 +275,11 @@ struct AddSubscriptionView: View {
                         .foregroundStyle(.secondary)
 
                     reminderPicker
+                }
+
+                // Price History (edit mode when > 1 record)
+                if let sub = subscriptionToEdit, sub.priceHistory.count > 1 {
+                    priceHistorySection(records: sub.priceHistory)
                 }
 
                 // Save
@@ -336,6 +379,146 @@ struct AddSubscriptionView: View {
         }
     }
 
+    // MARK: - OCR Scanning
+
+    private var scanningOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.25)
+                .ignoresSafeArea()
+
+            VStack(spacing: 12) {
+                ProgressView()
+                    .controlSize(.regular)
+                Text(L10n.scanningScreenshot)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: 200)
+            .aeroCard()
+        }
+        .transition(.opacity)
+    }
+
+    private func scanScreenshot(from item: PhotosPickerItem) {
+        isScanning = true
+        ocrWarningMessage = nil
+
+        Task {
+            var parsedResult: ParsedSubscription?
+            if let data = try? await item.loadTransferable(type: Data.self),
+               let image = UIImage(data: data) {
+                parsedResult = try? await SubscriptionOCRManager.shared.recognizeText(from: image)
+            }
+
+            await MainActor.run {
+                selectedPhotoItem = nil
+                isScanning = false
+
+                if let parsed = parsedResult, hasDetectedData(parsed) {
+                    applyParsedSubscription(parsed)
+                } else {
+                    resetFormFields()
+                    ocrWarningMessage = L10n.ocrNoDataFound
+                }
+
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    showDetailForm = true
+                }
+            }
+        }
+    }
+
+    private func hasDetectedData(_ parsed: ParsedSubscription) -> Bool {
+        parsed.name != nil
+            || parsed.price != nil
+            || parsed.nextBillingDate != nil
+            || parsed.isFreeTrial
+            || parsed.billingCycle == "yearly"
+    }
+
+    private func applyParsedSubscription(_ parsed: ParsedSubscription) {
+        name = parsed.name ?? ""
+        iconName = parsed.iconName ?? "creditcard"
+        priceText = parsed.price.map { formatPrice($0) } ?? ""
+        billingCycle = parsed.billingCycle
+        nextBillingDate = parsed.nextBillingDate ?? .now
+        isFreeTrial = parsed.isFreeTrial
+        if parsed.isFreeTrial {
+            useCustomReminder = true
+            customReminderDays = 1
+        } else {
+            useCustomReminder = false
+        }
+        ocrWarningMessage = nil
+    }
+
+    private func resetFormFields() {
+        name = ""
+        iconName = "creditcard"
+        priceText = ""
+        billingCycle = "monthly"
+        nextBillingDate = .now
+        isFreeTrial = false
+        useCustomReminder = false
+    }
+
+    // MARK: - Price History Section
+
+    private struct PriceTransition: Identifiable {
+        let id: UUID
+        let date: Date
+        let oldPrice: Double
+        let newPrice: Double
+
+        var percentChange: Int? {
+            guard oldPrice > 0 else { return nil }
+            return Int((((newPrice - oldPrice) / oldPrice) * 100).rounded())
+        }
+    }
+
+    private func priceHistorySection(records: [PriceRecord]) -> some View {
+        let sorted = records.sorted { $0.date < $1.date }
+        let transitions: [PriceTransition] = Array(
+            zip(sorted, sorted.dropFirst()).map { prev, curr in
+                PriceTransition(id: curr.id, date: curr.date, oldPrice: prev.price, newPrice: curr.price)
+            }.reversed()
+        )
+
+        return VStack(alignment: .leading, spacing: 6) {
+            Text(L10n.priceHistory)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.secondary)
+
+            VStack(spacing: 10) {
+                ForEach(Array(transitions.enumerated()), id: \.element.id) { index, item in
+                    HStack(spacing: 8) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.date, format: .dateTime.day().month(.abbreviated).year())
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+
+                            Text("\(currencySymbol)\(formatPrice(item.oldPrice)) → \(currencySymbol)\(formatPrice(item.newPrice))")
+                                .font(.subheadline.weight(.medium))
+                        }
+
+                        Spacer()
+
+                        if let pct = item.percentChange {
+                            Text(L10n.percentageChange(pct))
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(pct > 0 ? Color.red : (pct < 0 ? Color.green : Color.secondary))
+                        }
+                    }
+
+                    if index < transitions.count - 1 {
+                        Divider().opacity(0.3)
+                    }
+                }
+            }
+            .aeroCard()
+        }
+    }
+
     // MARK: - Actions
 
     private func save() {
@@ -344,6 +527,7 @@ struct AddSubscriptionView: View {
 
         let targetSub: Subscription
         if let sub = subscriptionToEdit {
+            let previousPrice = sub.price
             sub.name = name.trimmingCharacters(in: .whitespaces)
             sub.price = parsedPrice
             sub.billingCycle = billingCycle
@@ -351,8 +535,17 @@ struct AddSubscriptionView: View {
             sub.iconName = iconName
             sub.isFreeTrial = isFreeTrial
             sub.customReminderDays = resolvedReminder
+
+            if abs(previousPrice - parsedPrice) > 0.0001 {
+                if sub.priceHistory.isEmpty {
+                    sub.priceHistory.append(PriceRecord(price: previousPrice, date: sub.createdAt))
+                }
+                sub.priceHistory.append(PriceRecord(price: parsedPrice, date: .now))
+            }
+
             targetSub = sub
         } else {
+            let initialHistory = [PriceRecord(price: parsedPrice, date: .now)]
             let newSub = Subscription(
                 name: name.trimmingCharacters(in: .whitespaces),
                 price: parsedPrice,
@@ -360,7 +553,8 @@ struct AddSubscriptionView: View {
                 nextBillingDate: nextBillingDate,
                 iconName: iconName,
                 isFreeTrial: isFreeTrial,
-                customReminderDays: resolvedReminder
+                customReminderDays: resolvedReminder,
+                priceHistory: initialHistory
             )
             modelContext.insert(newSub)
             targetSub = newSub

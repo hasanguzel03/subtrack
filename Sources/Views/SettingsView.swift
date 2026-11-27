@@ -2,12 +2,17 @@ import SwiftUI
 import SwiftData
 
 struct SettingsView: View {
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @AppStorage("currencySymbol") private var currencySymbol = "₺"
     @AppStorage("reminderDaysBefore") private var reminderDaysBefore = 1
     @AppStorage("appTheme") private var appTheme = "system"
     @AppStorage("appLanguage") private var appLanguage = "tr"
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
     @Query private var subscriptions: [Subscription]
+
+    @State private var showResetAlert = false
+    @State private var isResetting = false
 
     private let currencies = [
         ("₺", "TRY"),
@@ -85,10 +90,34 @@ struct SettingsView: View {
                             }
                         }
                     }
+
+                    // Reset App
+                    Button(role: .destructive) {
+                        showResetAlert = true
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "arrow.counterclockwise")
+                            Text(L10n.resetApp)
+                        }
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.red)
+                        .frame(maxWidth: .infinity)
+                        .aeroCard()
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 12)
                 }
                 .padding(.horizontal, 24)
                 .padding(.vertical, 24)
             }
+        }
+        .alert(L10n.resetAlertTitle, isPresented: $showResetAlert) {
+            Button(L10n.cancel, role: .cancel) {}
+            Button(L10n.confirmReset, role: .destructive) {
+                resetApp()
+            }
+        } message: {
+            Text(L10n.resetAlertMessage)
         }
         .onChange(of: reminderDaysBefore) { _, _ in
             rescheduleNotifications()
@@ -103,7 +132,29 @@ struct SettingsView: View {
 
     // MARK: - Helpers
 
+    private func resetApp() {
+        isResetting = true
+
+        // 1. SwiftData cleanup
+        try? modelContext.delete(model: Subscription.self)
+        try? modelContext.save()
+
+        // 2. Notification cleanup
+        NotificationManager.shared.cancelAllNotifications()
+
+        // 3. Reset AppStorage defaults
+        currencySymbol = "₺"
+        reminderDaysBefore = 1
+        appTheme = "system"
+        appLanguage = "tr"
+        hasCompletedOnboarding = false
+
+        // 4. Dismiss settings sheet
+        dismiss()
+    }
+
     private func rescheduleNotifications() {
+        guard !isResetting else { return }
         NotificationManager.shared.rescheduleAll(
             subscriptions: subscriptions,
             defaultReminderDays: reminderDaysBefore,
