@@ -66,14 +66,7 @@ struct L10n {
     static var reminderLabel_field: String { isTR ? "Hatırlatıcı" : "Reminder" }
     static var choosePreset: String { isTR ? "Hazır Servis Seç" : "Choose Preset" }
     static var iconColor: String { isTR ? "İkon Rengi" : "Icon Color" }
-    static var scanFromScreenshot: String { isTR ? "Ekran Görüntüsünden Tara" : "Scan from Screenshot" }
     static var dictate: String { isTR ? "Dikte" : "Dictate" }
-    static var scanningScreenshot: String { isTR ? "Taranıyor..." : "Scanning..." }
-    static var ocrNoDataFound: String {
-        isTR
-            ? "Bilgi okunamadı, elle girebilirsin"
-            : "Couldn't detect details, you can enter manually"
-    }
     static var speechPermissionDenied: String {
         isTR
             ? "Konuşma tanıma izni gerekli. Ayarlar'dan izin verebilirsin."
@@ -100,20 +93,12 @@ struct L10n {
     static var done: String { isTR ? "Tamam" : "Done" }
     static var listening: String { isTR ? "Dinleniyor..." : "Listening..." }
 
-    static var dictationExamples: [(text: String, colorHex: String)] {
-        if isTR {
-            return [
-                ("Spotify, 24 Kasım, 10.99", "#1DB954"),
-                ("YouTube, 15 Aralık, 79.99", "#FF0000"),
-                ("Netflix, 12 Ocak, 229.99", "#E50914")
-            ]
-        } else {
-            return [
-                ("Spotify, Nov 24, 10.99", "#1DB954"),
-                ("YouTube, Dec 15, 79.99", "#FF0000"),
-                ("Netflix, Jan 12, 229.99", "#E50914")
-            ]
-        }
+    static var dictationExamples: [(brand: String, colorHex: String, price: String)] {
+        [
+            ("Spotify", "#1DB954", "10.99"),
+            ("YouTube", "#FF0000", "79.99"),
+            ("Netflix", "#E50914", "229.99")
+        ]
     }
     static var priceHistory: String { isTR ? "Fiyat Geçmişi" : "Price History" }
 
@@ -174,6 +159,8 @@ struct L10n {
     static var today: String { isTR ? "Bugün" : "Today" }
     static var oneWeek: String { isTR ? "1 Hafta" : "1 Week" }
     static var oneMonth: String { isTR ? "1 Ay" : "1 Month" }
+    static var oneWeekShort: String { isTR ? "+1 Hf" : "+1 Wk" }
+    static var oneMonthShort: String { isTR ? "+1 Ay" : "+1 Mo" }
 
     // MARK: - Settings
 

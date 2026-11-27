@@ -36,12 +36,15 @@ struct AeroBackground: View {
 
 struct AeroCardModifier: ViewModifier {
     @Environment(\.colorScheme) private var colorScheme
+    var verticalPadding: CGFloat = 16
+    var horizontalPadding: CGFloat = 16
 
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
 
         content
-            .padding(16)
+            .padding(.vertical, verticalPadding)
+            .padding(.horizontal, horizontalPadding)
             .frame(maxWidth: .infinity)
             .background {
                 ZStack {
@@ -83,8 +86,8 @@ struct AeroCardModifier: ViewModifier {
 }
 
 extension View {
-    func aeroCard() -> some View {
-        modifier(AeroCardModifier())
+    func aeroCard(verticalPadding: CGFloat = 16, horizontalPadding: CGFloat = 16) -> some View {
+        modifier(AeroCardModifier(verticalPadding: verticalPadding, horizontalPadding: horizontalPadding))
     }
 }
 

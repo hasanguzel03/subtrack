@@ -11,8 +11,20 @@ struct VoiceDictationView: View {
 
     let onComplete: (ParsedSubscription) -> Void
 
-    private var examples: [(text: String, colorHex: String)] {
+    private var examples: [(brand: String, colorHex: String, price: String)] {
         L10n.dictationExamples
+    }
+
+    private var formattedTodayDate: String {
+        let formatter = DateFormatter()
+        if appLanguage == "tr" {
+            formatter.locale = Locale(identifier: "tr_TR")
+            formatter.dateFormat = "d MMMM"
+        } else {
+            formatter.locale = Locale(identifier: "en_US")
+            formatter.dateFormat = "MMM d"
+        }
+        return formatter.string(from: .now)
     }
 
     private var safeExampleIndex: Int {
@@ -115,16 +127,21 @@ struct VoiceDictationView: View {
             VStack(spacing: 16) {
                 Text(L10n.dictationFormatHint)
                     .font(.caption.weight(.medium))
-                    .opacity(0.45)
+                    .foregroundColor(Color.primary.opacity(0.45))
 
                 if !examples.isEmpty {
                     let current = examples[safeExampleIndex]
-                    Text(current.text)
-                        .id("\(appLanguage)-\(safeExampleIndex)")
-                        .font(.title3.weight(.semibold))
-                        .multilineTextAlignment(.center)
-                        .foregroundStyle(Color(hex: current.colorHex).opacity(0.65))
-                        .transition(.opacity)
+                    (
+                        Text(current.brand)
+                            .foregroundColor(Color(hex: current.colorHex).opacity(0.75))
+                        +
+                        Text(", \(formattedTodayDate), \(current.price)")
+                            .foregroundColor(Color.primary.opacity(0.45))
+                    )
+                    .id("\(appLanguage)-\(safeExampleIndex)")
+                    .font(.title3.weight(.semibold))
+                    .multilineTextAlignment(.center)
+                    .transition(.opacity)
                 }
             }
             .task(id: exampleIndex) {
@@ -247,7 +264,7 @@ struct VoiceDictationView: View {
         let spokenText = speechManager.transcript
         speechManager.stopRecording()
 
-        let parsed = SubscriptionOCRManager.shared.parseText(spokenText)
+        let parsed = SubscriptionTextParser.shared.parseText(spokenText)
         onComplete(parsed)
         dismiss()
     }

@@ -1,7 +1,4 @@
 import Foundation
-import ImageIO
-import UIKit
-import Vision
 
 // MARK: - Parsed Result
 
@@ -15,72 +12,31 @@ struct ParsedSubscription: Sendable {
     var isFreeTrial: Bool = false
 }
 
-// MARK: - OCR Error
+// MARK: - SubscriptionTextParser
 
-enum SubscriptionOCRError: LocalizedError {
-    case invalidImage
-
-    var errorDescription: String? {
-        switch self {
-        case .invalidImage:
-            return "Unable to read image data."
-        }
-    }
-}
-
-// MARK: - SubscriptionOCRManager
-
-final class SubscriptionOCRManager: Sendable {
-    static let shared = SubscriptionOCRManager()
+final class SubscriptionTextParser: Sendable {
+    static let shared = SubscriptionTextParser()
 
     private init() {}
 
-    func recognizeText(from image: UIImage) async throws -> ParsedSubscription {
-        guard let cgImage = image.cgImage else {
-            throw SubscriptionOCRError.invalidImage
-        }
-
-        let orientation = CGImagePropertyOrientation(image.imageOrientation)
-
-        let lines: [String] = try await Task.detached(priority: .userInitiated) {
-            try autoreleasepool {
-                let request = VNRecognizeTextRequest()
-                request.recognitionLevel = .accurate
-                request.usesLanguageCorrection = true
-                request.recognitionLanguages = ["tr-TR", "en-US"]
-
-                let handler = VNImageRequestHandler(
-                    cgImage: cgImage,
-                    orientation: orientation,
-                    options: [:]
-                )
-                try handler.perform([request])
-
-                let observations = request.results ?? []
-                return observations.compactMap { $0.topCandidates(1).first?.string }
-            }
-        }.value
-
-        let fullText = lines.joined(separator: "\n")
-        return parseText(fullText)
-    }
-
-    /// Shared smart parser used by both Screenshot OCR and Voice Dictation.
+    /// Parses spoken dictation text into subscription fields.
     func parseText(_ text: String) -> ParsedSubscription {
         var result = ParsedSubscription()
 
+        // 1. Extract date first and remove matched date phrases from text
         let dateExtraction = extractDateAndRanges(from: text)
         result.nextBillingDate = dateExtraction.date
+        let textWithoutDate = maskRanges(dateExtraction.ranges, in: text)
 
         if let matchedService = matchService(in: text) {
             result.name = matchedService.name
             result.iconName = matchedService.iconName
             result.colorHex = matchedService.colorHex
         } else {
-            result.name = extractFirstMeaningfulWord(from: text, excluding: dateExtraction.ranges)
+            result.name = extractFirstMeaningfulWord(from: textWithoutDate)
         }
 
-        result.price = extractPrice(from: text, excluding: dateExtraction.ranges)
+        result.price = extractPrice(from: textWithoutDate)
         result.billingCycle = extractBillingCycle(from: text)
         result.isFreeTrial = detectFreeTrial(in: text)
 
@@ -113,7 +69,7 @@ final class SubscriptionOCRManager: Sendable {
             }
         }
 
-        // Pass 2: Substring fallback for longer multi-word or glued OCR names
+        // Pass 2: Substring fallback for longer multi-word names
         for item in sortedCatalog where item.name.count >= 5 {
             if text.localizedCaseInsensitiveContains(item.name) {
                 return item
@@ -143,10 +99,9 @@ final class SubscriptionOCRManager: Sendable {
         return nil
     }
 
-    private func extractFirstMeaningfulWord(from text: String, excluding dateRanges: [NSRange]) -> String? {
-        let masked = maskRanges(dateRanges, in: text)
+    private func extractFirstMeaningfulWord(from textWithoutDate: String) -> String? {
         let separators = CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters).union(.symbols)
-        let tokens = masked.components(separatedBy: separators)
+        let tokens = textWithoutDate.components(separatedBy: separators)
 
         for rawToken in tokens {
             let token = rawToken.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -182,101 +137,109 @@ final class SubscriptionOCRManager: Sendable {
 
     // MARK: - 2. Price Extraction
 
-    private func extractPrice(from text: String, excluding dateRanges: [NSRange]) -> Double? {
-        // 1. Prefer explicit currency-tagged prices
-        let currency = "(?:₺|US\\$|\\$|€|£|(?<![\\p{L}\\p{N}])(?:TL|TRY|USD|EUR)(?![\\p{L}\\p{N}]))"
-        let number = "(?<![\\d.,/])(\\d{1,3}(?:[.,]\\d{3})*(?:[.,]\\d{1,2})?|\\d+(?:[.,]\\d{1,2})?)(?![\\d.,/])"
-        let currencyPattern = "(?:\(currency)\\s*\(number)|\(number)\\s*\(currency))"
+    private func extractPrice(from textWithoutDate: String) -> Double? {
+        let normalized = normalizeSpokenNumbers(in: textWithoutDate)
 
-        if let regex = try? NSRegularExpression(pattern: currencyPattern, options: [.caseInsensitive]) {
-            let nsText = text as NSString
-            let matches = regex.matches(in: text, range: NSRange(location: 0, length: nsText.length))
+        // Extract all numbers using (\d+(?:\.\d{1,2})?)
+        let pattern = "(\\d+(?:\\.\\d{1,2})?)"
+        guard let regex = try? NSRegularExpression(pattern: pattern) else {
+            return nil
+        }
 
-            var taggedCandidates: [Double] = []
-            for match in matches {
-                for groupIndex in [1, 2] {
-                    let range = match.range(at: groupIndex)
-                    if range.location != NSNotFound {
-                        let rawNumber = nsText.substring(with: range)
-                        if let parsed = parseAmount(rawNumber) {
-                            taggedCandidates.append(parsed)
-                        }
-                        break
-                    }
-                }
-            }
+        let nsText = normalized as NSString
+        let matches = regex.matches(in: normalized, range: NSRange(location: 0, length: nsText.length))
 
-            if let positive = taggedCandidates.first(where: { $0 > 0 }) ?? taggedCandidates.first {
-                return positive
+        var candidates: [(raw: String, value: Double)] = []
+        for match in matches {
+            let raw = nsText.substring(with: match.range(at: 1))
+            if let value = Double(raw), value > 0 {
+                candidates.append((raw, value))
             }
         }
 
-        // 2. Fallback for dictation without currency symbol (e.g. "Spotify, 24 Kasım, 10.99")
-        let masked = maskRanges(dateRanges, in: text)
-        let bareNumberPattern = "(?<![\\d.,:/-])(\\d+(?:[.,]\\d{1,2})?)(?![\\d.,:/-]|\\s*(?:GB|TB|MB)(?![\\p{L}\\p{N}]))"
-        if let regex = try? NSRegularExpression(pattern: bareNumberPattern, options: [.caseInsensitive]) {
-            let nsText = masked as NSString
-            let matches = regex.matches(in: masked, range: NSRange(location: 0, length: nsText.length))
-
-            var bareCandidates: [Double] = []
-            for match in matches {
-                let raw = nsText.substring(with: match.range(at: 1))
-                if let parsed = parseAmount(raw) {
-                    bareCandidates.append(parsed)
-                }
-            }
-
-            // Pick the last spoken numeric amount (after ignoring date numbers)
-            if let last = bareCandidates.last {
-                return last
-            }
+        // Prefer decimal amounts (e.g. 10.99, 229.99) first; otherwise pick the last positive number
+        if let decimalMatch = candidates.last(where: { $0.raw.contains(".") }) {
+            return decimalMatch.value
         }
-
-        return nil
+        return candidates.last?.value
     }
 
-    private func parseAmount(_ raw: String) -> Double? {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
+    private func normalizeSpokenNumbers(in text: String) -> String {
+        var normalized = text
 
-        let dotCount = trimmed.filter { $0 == "." }.count
-        let commaCount = trimmed.filter { $0 == "," }.count
+        // Remove storage unit quantities so e.g. "50 GB" isn't mistaken for price
+        normalized = replacingRegex(
+            pattern: "(?<![\\d.,])\\d+\\s*(?:GB|TB|MB)(?![\\p{L}\\p{N}])",
+            in: normalized,
+            with: " ",
+            options: [.caseInsensitive]
+        )
 
-        let normalized: String
-        if dotCount > 0 && commaCount > 0 {
-            if let lastDot = trimmed.lastIndex(of: "."),
-               let lastComma = trimmed.lastIndex(of: ",") {
-                if lastComma > lastDot {
-                    normalized = trimmed
-                        .replacingOccurrences(of: ".", with: "")
-                        .replacingOccurrences(of: ",", with: ".")
-                } else {
-                    normalized = trimmed.replacingOccurrences(of: ",", with: "")
-                }
-            } else {
-                normalized = trimmed
-            }
-        } else if commaCount == 1 {
-            let parts = trimmed.split(separator: ",", omittingEmptySubsequences: false)
-            if parts.count == 2 && parts[1].count == 3 {
-                normalized = trimmed.replacingOccurrences(of: ",", with: "")
-            } else {
-                normalized = trimmed.replacingOccurrences(of: ",", with: ".")
-            }
-        } else if dotCount == 1 {
-            let parts = trimmed.split(separator: ".", omittingEmptySubsequences: false)
-            if parts.count == 2 && parts[1].count == 3 {
-                normalized = trimmed.replacingOccurrences(of: ".", with: "")
-            } else {
-                normalized = trimmed
-            }
-        } else {
-            normalized = trimmed
-                .replacingOccurrences(of: ".", with: "")
-                .replacingOccurrences(of: ",", with: "")
+        // Handle thousands dot + comma decimal (e.g. "1.299,90" -> "1299.90")
+        normalized = replacingRegex(
+            pattern: "(?<!\\d)(\\d{1,3})\\.(\\d{3}),(\\d{1,2})(?!\\d)",
+            in: normalized,
+            with: "$1$2.$3"
+        )
+
+        // Handle standalone thousands dot without decimals (e.g. "1.200" -> "1200")
+        normalized = replacingRegex(
+            pattern: "(?<![\\d.])(\\d{1,3})\\.(\\d{3})(?![\\d.])",
+            in: normalized,
+            with: "$1$2"
+        )
+
+        // Replace spoken currency cents (e.g. "229 lira 99 kuruş" -> "229.99")
+        normalized = replacingRegex(
+            pattern: "(\\d+)\\s*(?:lira|tl|dolar|dollars?|euro|sterlin|pounds?)\\s*(\\d{1,2})(?:\\s*(?:kuruş|kurus|sent|cents?))?(?![\\p{L}\\d])",
+            in: normalized,
+            with: "$1.$2",
+            options: [.caseInsensitive]
+        )
+
+        // Replace spoken decimal words (" nokta ", " virgül ", " point ") with "."
+        normalized = replacingRegex(
+            pattern: "\\s+(?:nokta|virg[uü]l|point)\\s+",
+            in: normalized,
+            with: ".",
+            options: [.caseInsensitive]
+        )
+
+        // Replace commas between digits ("10,99" -> "10.99")
+        normalized = replacingRegex(
+            pattern: "(\\d),(\\d)",
+            in: normalized,
+            with: "$1.$2"
+        )
+
+        // Collapse spaces around dots between digits ("10 . 99" -> "10.99")
+        normalized = replacingRegex(
+            pattern: "(\\d)\\s*\\.\\s*(\\d)",
+            in: normalized,
+            with: "$1.$2"
+        )
+
+        // Join space-separated two-digit cents (e.g. "10 99" -> "10.99")
+        normalized = replacingRegex(
+            pattern: "(?<![\\d.])(\\d+)\\s+(\\d{2})(?![\\d.])",
+            in: normalized,
+            with: "$1.$2"
+        )
+
+        return normalized
+    }
+
+    private func replacingRegex(
+        pattern: String,
+        in text: String,
+        with template: String,
+        options: NSRegularExpression.Options = []
+    ) -> String {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: options) else {
+            return text
         }
-
-        return Double(normalized)
+        let range = NSRange(location: 0, length: (text as NSString).length)
+        return regex.stringByReplacingMatches(in: text, range: range, withTemplate: template)
     }
 
     // MARK: - 3. Billing Cycle
@@ -340,15 +303,24 @@ final class SubscriptionOCRManager: Sendable {
         var candidates: [(date: Date, range: NSRange)] = []
         for match in matches {
             guard let date = match.date else { continue }
-            let snippet = nsText.substring(with: match.range)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let rawSnippet = nsText.substring(with: match.range)
+            let snippet = rawSnippet.trimmingCharacters(in: .whitespacesAndNewlines)
 
-            // Ignore standalone clock strings such as status bar "09:41"
             if firstRegexMatch(pattern: "^\\d{1,2}:\\d{2}(?:\\s*[ap]m)?$", in: snippet, options: [.caseInsensitive]) != nil {
                 continue
             }
 
-            candidates.append((date, match.range))
+            // Prevent NSDataDetector from swallowing a trailing 1-2 digit price after "27 Kasım" / "Nov 27"
+            var effectiveRange = match.range
+            if let trimmedMatch = firstRegexMatch(
+                pattern: "^\\s*(\\d{1,2}\\s+[\\p{L}]{3,}|[\\p{L}]{3,}\\s+\\d{1,2})\\s+\\d{1,2}\\s*$",
+                in: rawSnippet
+            ) {
+                let prefixRange = trimmedMatch.range(at: 1)
+                effectiveRange = NSRange(location: match.range.location + prefixRange.location, length: prefixRange.length)
+            }
+
+            candidates.append((date, effectiveRange))
         }
 
         guard !candidates.isEmpty else { return nil }
@@ -357,7 +329,6 @@ final class SubscriptionOCRManager: Sendable {
     }
 
     private func extractDateWithRegexFallback(in text: String) -> (date: Date?, ranges: [NSRange]) {
-        // Numeric dd.MM.yyyy / dd/MM/yyyy / dd-MM-yyyy
         let numericPattern = "(?<!\\d)(\\d{1,2})[./-](\\d{1,2})[./-](\\d{2,4})(?!\\d)"
         if let regex = try? NSRegularExpression(pattern: numericPattern) {
             let nsText = text as NSString
@@ -388,7 +359,6 @@ final class SubscriptionOCRManager: Sendable {
             }
         }
 
-        // Month-name fallback across Turkish and English locales (with or without year, e.g. "24 Kasım", "15 December", "12 Aralık 2026")
         let candidatePatterns = [
             "(?<![\\p{L}\\d])\\d{1,2}\\s+[\\p{L}]{3,}(?:\\s+\\d{4})?(?!\\d)",
             "(?<![\\p{L}\\d])[\\p{L}]{3,}\\s+\\d{1,2}(?:,?\\s+\\d{4})?(?!\\d)"
@@ -483,23 +453,5 @@ final class SubscriptionOCRManager: Sendable {
         }
         let nsText = text as NSString
         return regex.firstMatch(in: text, range: NSRange(location: 0, length: nsText.length))
-    }
-}
-
-// MARK: - UIImage.Orientation Mapping
-
-private extension CGImagePropertyOrientation {
-    init(_ uiOrientation: UIImage.Orientation) {
-        switch uiOrientation {
-        case .up: self = .up
-        case .upMirrored: self = .upMirrored
-        case .down: self = .down
-        case .downMirrored: self = .downMirrored
-        case .left: self = .left
-        case .leftMirrored: self = .leftMirrored
-        case .right: self = .right
-        case .rightMirrored: self = .rightMirrored
-        @unknown default: self = .up
-        }
     }
 }

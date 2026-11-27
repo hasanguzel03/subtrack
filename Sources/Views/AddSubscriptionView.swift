@@ -1,7 +1,5 @@
-import PhotosUI
 import SwiftData
 import SwiftUI
-import UIKit
 
 struct AddSubscriptionView: View {
     @Environment(\.modelContext) private var modelContext
@@ -20,15 +18,11 @@ struct AddSubscriptionView: View {
     @State private var billingCycle: String = "monthly"
     @State private var nextBillingDate: Date = .now
     @State private var isFreeTrial: Bool = false
-    @State private var useCustomReminder: Bool = false
-    @State private var customReminderDays: Int = 1
+    @State private var customReminderDays: Int? = nil
     @State private var hasLoadedInitialData: Bool = false
 
-    // OCR screenshot import & voice dictation
-    @State private var selectedPhotoItem: PhotosPickerItem?
-    @State private var isScanning: Bool = false
+    // Voice dictation
     @State private var showVoiceDictation: Bool = false
-    @State private var ocrWarningMessage: String?
 
     private var isEditing: Bool { subscriptionToEdit != nil }
 
@@ -47,25 +41,9 @@ struct AddSubscriptionView: View {
             AeroBackground()
 
             ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 16) {
-                    if let warning = ocrWarningMessage {
-                        HStack(spacing: 10) {
-                            Image(systemName: "info.circle")
-                                .foregroundStyle(.orange)
-                            Text(warning)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                        }
-                        .aeroCard()
-                    }
-
-                    // 1. Name (Top) + Compact OCR Button
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(L10n.subscriptionName)
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(.secondary)
-
+                VStack(spacing: 12) {
+                    // 1. Subscription Name + Inline Dictation Icon
+                    HStack(spacing: 10) {
                         HStack(spacing: 10) {
                             Image(systemName: iconName)
                                 .font(.body.weight(.semibold))
@@ -75,213 +53,143 @@ struct AddSubscriptionView: View {
                             TextField(L10n.namePlaceholder, text: $name)
                                 .textInputAutocapitalization(.words)
                         }
-                        .aeroCard()
+                        .frame(minHeight: 24)
+                        .aeroCard(verticalPadding: 14)
 
                         if !isEditing {
-                            HStack(spacing: 10) {
-                                PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
-                                    HStack(spacing: 8) {
-                                        Image(systemName: "doc.text.viewfinder")
-                                            .font(.subheadline)
-                                            .foregroundStyle(.secondary)
-                                        Text(L10n.scanFromScreenshot)
-                                            .font(.subheadline.weight(.medium))
-                                            .lineLimit(1)
-                                            .minimumScaleFactor(0.78)
-                                    }
-                                    .padding(.horizontal, 14)
-                                    .padding(.vertical, 11)
-                                    .frame(maxWidth: .infinity)
-                                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                            .stroke(.white.opacity(0.14), lineWidth: 1)
-                                    )
-                                    .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                                }
-                                .buttonStyle(.plain)
-                                .disabled(isScanning)
-
-                                Button {
-                                    showVoiceDictation = true
-                                } label: {
-                                    HStack(spacing: 6) {
-                                        Image(systemName: "mic.fill")
-                                            .font(.subheadline)
-                                            .foregroundStyle(Color(hex: 0xA855F7))
-                                        Text(L10n.dictate)
-                                            .font(.subheadline.weight(.medium))
-                                            .lineLimit(1)
-                                    }
-                                    .padding(.horizontal, 14)
-                                    .padding(.vertical, 11)
-                                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                            .stroke(.white.opacity(0.14), lineWidth: 1)
-                                    )
-                                    .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                                }
-                                .buttonStyle(.plain)
-                                .disabled(isScanning)
+                            Button {
+                                showVoiceDictation = true
+                            } label: {
+                                Image(systemName: "mic.fill")
+                                    .font(.body.weight(.semibold))
+                                    .foregroundStyle(Color(hex: 0xA855F7))
+                                    .frame(minHeight: 24)
+                                    .aeroCard(verticalPadding: 14, horizontalPadding: 0)
+                                    .frame(width: 52)
                             }
+                            .buttonStyle(.plain)
                         }
                     }
 
-                    // 2. Compact Single-Row Preset Menu
+                    // 2. Preset Popup Menu + Compact Color Dots Row
                     presetMenuRow
+                    colorPickerRow
 
-                    // 3. Price
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(L10n.amount)
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(.secondary)
-                        TextField("0", text: $priceText)
-                            .keyboardType(.decimalPad)
-                            .aeroCard()
+                    // 3. Price | Free Trial (Side by Side)
+                    HStack(spacing: 12) {
+                        HStack(spacing: 6) {
+                            Text(currencySymbol)
+                                .font(.body.weight(.semibold))
+                                .foregroundStyle(.secondary)
+
+                            TextField("0", text: $priceText)
+                                .keyboardType(.decimalPad)
+                                .font(.body.weight(.medium))
+                        }
+                        .frame(minHeight: 26)
+                        .aeroCard(verticalPadding: 13)
+                        .opacity(isFreeTrial ? 0.45 : 1)
+
+                        HStack(spacing: 8) {
+                            Text(L10n.trial)
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(isFreeTrial ? Color.orange : Color.primary)
+
+                            Toggle("", isOn: Binding(
+                                get: { isFreeTrial },
+                                set: { newValue in
+                                    withAnimation(.easeInOut(duration: 0.25)) {
+                                        isFreeTrial = newValue
+                                        if newValue && customReminderDays == nil {
+                                            customReminderDays = 1
+                                        }
+                                    }
+                                }
+                            ))
+                            .labelsHidden()
+                            .tint(.orange)
+                        }
+                        .frame(minHeight: 26)
+                        .aeroCard(verticalPadding: 13, horizontalPadding: 14)
+                        .fixedSize(horizontal: true, vertical: false)
                     }
 
                     // 4. Billing Cycle
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(L10n.period)
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(.secondary)
-                        Picker(L10n.period, selection: $billingCycle) {
-                            Text(L10n.monthly).tag("monthly")
-                            Text(L10n.yearly).tag("yearly")
-                        }
-                        .pickerStyle(.segmented)
-                        .aeroCard()
+                    Picker(L10n.period, selection: $billingCycle) {
+                        Text(L10n.monthly).tag("monthly")
+                        Text(L10n.yearly).tag("yearly")
                     }
+                    .pickerStyle(.segmented)
+                    .aeroCard(verticalPadding: 10, horizontalPadding: 12)
 
-                    // 5. Free Trial Toggle
-                    Toggle(isOn: Binding(
-                        get: { isFreeTrial },
-                        set: { newValue in
-                            withAnimation(.easeInOut(duration: 0.25)) {
-                                isFreeTrial = newValue
-                                if newValue && !useCustomReminder {
-                                    useCustomReminder = true
-                                    customReminderDays = 1
-                                }
-                            }
+                    // 5. Compact Date Picker + Shortcut Chips
+                    VStack(spacing: 10) {
+                        HStack {
+                            Text(isFreeTrial ? L10n.trialEndDate : L10n.nextBillingDate)
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(.secondary)
+                                .animation(.easeInOut(duration: 0.2), value: isFreeTrial)
+
+                            Spacer()
+
+                            DatePicker(
+                                "",
+                                selection: $nextBillingDate,
+                                displayedComponents: .date
+                            )
+                            .datePickerStyle(.compact)
+                            .labelsHidden()
                         }
-                    )) {
-                        Text(L10n.freeTrial)
-                            .font(.subheadline.weight(.medium))
-                    }
-                    .aeroCard()
 
-                    // 6. Easy Date Picker
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(isFreeTrial ? L10n.trialEndDate : L10n.nextBillingDate)
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(.secondary)
-                            .animation(.easeInOut(duration: 0.25), value: isFreeTrial)
-
-                        HStack(spacing: 10) {
+                        HStack(spacing: 8) {
                             quickDateButton(title: L10n.today, date: .now)
                             quickDateButton(
-                                title: L10n.oneWeek,
+                                title: L10n.oneWeekShort,
                                 date: Calendar.current.date(byAdding: .weekOfYear, value: 1, to: .now)!
                             )
                             quickDateButton(
-                                title: L10n.oneMonth,
+                                title: L10n.oneMonthShort,
                                 date: Calendar.current.date(byAdding: .month, value: 1, to: .now)!
                             )
                         }
-
-                        DatePicker(
-                            "",
-                            selection: $nextBillingDate,
-                            displayedComponents: .date
-                        )
-                        .datePickerStyle(.compact)
-                        .labelsHidden()
-                        .aeroCard()
                     }
+                    .aeroCard(verticalPadding: 12)
 
-                    // 7. Custom Reminder
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(L10n.reminderLabel_field)
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(.secondary)
+                    // 6. Single-Row Reminder Menu
+                    reminderMenuRow
 
-                        reminderPicker
-                    }
-
-                    // 8. Manual Color Picker Row
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(L10n.iconColor)
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(.secondary)
-
-                        HStack(spacing: 0) {
-                            ForEach(Self.colorPalette, id: \.self) { hex in
-                                Button {
-                                    withAnimation(.easeInOut(duration: 0.2)) {
-                                        colorHex = hex
-                                    }
-                                } label: {
-                                    ZStack {
-                                        Circle()
-                                            .fill(Color(hex: hex))
-                                            .frame(width: 26, height: 26)
-
-                                        if colorHex.caseInsensitiveCompare(hex) == .orderedSame {
-                                            Circle()
-                                                .stroke(Color.primary, lineWidth: 2)
-                                                .frame(width: 32, height: 32)
-                                        }
-                                    }
-                                    .frame(maxWidth: .infinity)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                        .aeroCard()
-                    }
-
-                    // 9. Price History (edit mode when > 1 record)
+                    // 7. Price History (edit mode when > 1 record)
                     if let sub = subscriptionToEdit, sub.priceHistory.count > 1 {
                         priceHistorySection(records: sub.priceHistory)
                     }
 
-                    // 10. Save
+                    // 8. Save
                     Button { save() } label: {
                         Text(L10n.save)
                             .font(.body.weight(.semibold))
                             .frame(maxWidth: .infinity)
-                            .aeroCard()
+                            .aeroCard(verticalPadding: 14)
                     }
                     .buttonStyle(.plain)
                     .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .opacity(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.45 : 1)
 
-                    // 11. Delete (edit mode)
+                    // 9. Delete (edit mode)
                     if isEditing {
                         Button(role: .destructive) { delete() } label: {
                             Text(L10n.delete)
                                 .font(.subheadline.weight(.medium))
                                 .foregroundStyle(.red)
                                 .frame(maxWidth: .infinity)
-                                .aeroCard()
+                                .aeroCard(verticalPadding: 12)
                         }
                         .buttonStyle(.plain)
                     }
                 }
-                .padding(.horizontal, 24)
-                .padding(.vertical, 24)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 20)
             }
             .scrollDismissesKeyboard(.interactively)
-
-            if isScanning {
-                scanningOverlay
-            }
-        }
-        .onChange(of: selectedPhotoItem) { _, newItem in
-            guard let newItem else { return }
-            scanScreenshot(from: newItem)
         }
         .fullScreenCover(isPresented: $showVoiceDictation) {
             VoiceDictationView { parsed in
@@ -300,17 +208,14 @@ struct AddSubscriptionView: View {
                 billingCycle = sub.billingCycle
                 nextBillingDate = sub.nextBillingDate
                 isFreeTrial = sub.isFreeTrial
-                if let custom = sub.customReminderDays {
-                    useCustomReminder = true
-                    customReminderDays = custom
-                }
+                customReminderDays = sub.customReminderDays
             } else if let prefilled = prefilledData {
                 applyParsedSubscription(prefilled)
             }
         }
     }
 
-    // MARK: - Preset Popup Menu
+    // MARK: - Preset & Color Row
 
     private var presetMenuRow: some View {
         Menu {
@@ -341,9 +246,36 @@ struct AddSubscriptionView: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
             }
-            .aeroCard()
+            .aeroCard(verticalPadding: 13)
         }
         .buttonStyle(.plain)
+    }
+
+    private var colorPickerRow: some View {
+        HStack(spacing: 0) {
+            ForEach(Self.colorPalette, id: \.self) { hex in
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        colorHex = hex
+                    }
+                } label: {
+                    ZStack {
+                        Circle()
+                            .fill(Color(hex: hex))
+                            .frame(width: 22, height: 22)
+
+                        if colorHex.caseInsensitiveCompare(hex) == .orderedSame {
+                            Circle()
+                                .stroke(Color.primary, lineWidth: 2)
+                                .frame(width: 28, height: 28)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .aeroCard(verticalPadding: 10)
     }
 
     private func selectCatalogItem(_ item: ServiceCatalogItem) {
@@ -355,7 +287,6 @@ struct AddSubscriptionView: View {
 
             let price = currencySymbol == "$" ? item.defaultPriceUSD : item.defaultPriceTRY
             priceText = formatPrice(price)
-            ocrWarningMessage = nil
         }
     }
 
@@ -369,114 +300,66 @@ struct AddSubscriptionView: View {
         } label: {
             Text(title)
                 .font(.caption.weight(.medium))
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 7)
                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(.white.opacity(0.1), lineWidth: 1)
+                        .stroke(.white.opacity(0.12), lineWidth: 1)
                 )
         }
         .buttonStyle(.plain)
     }
 
-    // MARK: - Reminder Picker
+    // MARK: - Reminder Popup Menu
 
-    private var reminderPicker: some View {
-        VStack(spacing: 8) {
+    private var reminderMenuRow: some View {
+        Menu {
             Button {
-                useCustomReminder = false
+                customReminderDays = nil
             } label: {
-                HStack {
+                if customReminderDays == nil {
+                    Label(L10n.reminderDefaultLabel(days: globalReminderDays), systemImage: "checkmark")
+                } else {
                     Text(L10n.reminderDefaultLabel(days: globalReminderDays))
-                        .font(.body.weight(.medium))
-                        .opacity(useCustomReminder ? 1 : 0.9)
-                    Spacer()
-                    if !useCustomReminder {
-                        Image(systemName: "checkmark")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.green)
-                    }
                 }
-                .aeroCard()
-                .opacity(useCustomReminder ? 0.55 : 1)
             }
-            .buttonStyle(.plain)
 
             ForEach([0, 1, 3, 7], id: \.self) { days in
                 Button {
-                    useCustomReminder = true
                     customReminderDays = days
                 } label: {
-                    HStack {
+                    if customReminderDays == days {
+                        Label(L10n.reminderLabel(for: days), systemImage: "checkmark")
+                    } else {
                         Text(L10n.reminderLabel(for: days))
-                            .font(.body.weight(.medium))
-                        Spacer()
-                        if useCustomReminder && customReminderDays == days {
-                            Image(systemName: "checkmark")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.green)
-                        }
                     }
-                    .aeroCard()
-                    .opacity(useCustomReminder && customReminderDays == days ? 1 : 0.55)
                 }
-                .buttonStyle(.plain)
             }
-        }
-    }
-
-    // MARK: - OCR Scanning
-
-    private var scanningOverlay: some View {
-        ZStack {
-            Color.black.opacity(0.25)
-                .ignoresSafeArea()
-
-            VStack(spacing: 12) {
-                ProgressView()
-                    .controlSize(.regular)
-                Text(L10n.scanningScreenshot)
+        } label: {
+            HStack(spacing: 10) {
+                Text(L10n.reminderLabel_field)
                     .font(.subheadline.weight(.medium))
+
+                Spacer()
+
+                Text(
+                    customReminderDays.map { L10n.reminderLabel(for: $0) }
+                        ?? L10n.reminderDefaultLabel(days: globalReminderDays)
+                )
+                .font(.subheadline.weight(.medium))
+                .opacity(customReminderDays == nil ? 0.55 : 1)
+
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
             }
-            .frame(maxWidth: 200)
-            .aeroCard()
+            .aeroCard(verticalPadding: 13)
         }
-        .transition(.opacity)
+        .buttonStyle(.plain)
     }
 
-    private func scanScreenshot(from item: PhotosPickerItem) {
-        isScanning = true
-        ocrWarningMessage = nil
-
-        Task {
-            var parsedResult: ParsedSubscription?
-            if let data = try? await item.loadTransferable(type: Data.self),
-               let image = UIImage(data: data) {
-                parsedResult = try? await SubscriptionOCRManager.shared.recognizeText(from: image)
-            }
-
-            await MainActor.run {
-                selectedPhotoItem = nil
-                isScanning = false
-
-                if let parsed = parsedResult, hasDetectedData(parsed) {
-                    applyParsedSubscription(parsed)
-                } else {
-                    ocrWarningMessage = L10n.ocrNoDataFound
-                }
-            }
-        }
-    }
-
-    private func hasDetectedData(_ parsed: ParsedSubscription) -> Bool {
-        parsed.name != nil
-            || parsed.price != nil
-            || parsed.nextBillingDate != nil
-            || parsed.isFreeTrial
-            || parsed.billingCycle == "yearly"
-    }
+    // MARK: - Dictation Prefill
 
     private func applyParsedSubscription(_ parsed: ParsedSubscription) {
         if let parsedName = parsed.name {
@@ -492,11 +375,9 @@ struct AddSubscriptionView: View {
             nextBillingDate = parsedDate
         }
         isFreeTrial = parsed.isFreeTrial
-        if parsed.isFreeTrial {
-            useCustomReminder = true
+        if parsed.isFreeTrial && customReminderDays == nil {
             customReminderDays = 1
         }
-        ocrWarningMessage = nil
     }
 
     // MARK: - Price History Section
@@ -523,10 +404,10 @@ struct AddSubscriptionView: View {
 
         return VStack(alignment: .leading, spacing: 6) {
             Text(L10n.priceHistory)
-                .font(.subheadline.weight(.medium))
+                .font(.caption.weight(.medium))
                 .foregroundStyle(.secondary)
 
-            VStack(spacing: 10) {
+            VStack(spacing: 8) {
                 ForEach(Array(transitions.enumerated()), id: \.element.id) { index, item in
                     HStack(spacing: 8) {
                         VStack(alignment: .leading, spacing: 2) {
@@ -552,7 +433,7 @@ struct AddSubscriptionView: View {
                     }
                 }
             }
-            .aeroCard()
+            .aeroCard(verticalPadding: 12)
         }
     }
 
@@ -563,7 +444,7 @@ struct AddSubscriptionView: View {
         guard !trimmedName.isEmpty else { return }
 
         let parsedPrice = parsePrice(priceText)
-        let resolvedReminder: Int? = useCustomReminder ? customReminderDays : nil
+        let resolvedReminder: Int? = customReminderDays
 
         let targetSub: Subscription
         if let sub = subscriptionToEdit {
