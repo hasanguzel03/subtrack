@@ -91,6 +91,11 @@ struct SettingsView: View {
                         }
                     }
 
+                    // [TEMP_NOTIFICATION_TEST_START]
+                    NotificationTestTriggerButton()
+                        .padding(.top, 12)
+                    // [TEMP_NOTIFICATION_TEST_END]
+
                     // Reset App
                     Button(role: .destructive) {
                         showResetAlert = true
@@ -105,7 +110,6 @@ struct SettingsView: View {
                         .aeroCard()
                     }
                     .buttonStyle(.plain)
-                    .padding(.top, 12)
                 }
                 .padding(.horizontal, 24)
                 .padding(.vertical, 24)

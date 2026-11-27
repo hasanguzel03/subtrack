@@ -48,12 +48,11 @@ final class SubscriptionTextParser: Sendable {
     private static let catalogAliases: [(keyword: String, catalogName: String)] = [
         ("youtube", "YouTube Premium"),
         ("chatgpt", "ChatGPT Plus"),
-        ("duolingo", "Duolingo Super"),
+        ("gemini", "Gemini"),
+        ("claude", "Claude"),
         ("xbox", "Xbox Game Pass"),
         ("playstation", "PlayStation Plus"),
         ("ps plus", "PlayStation Plus"),
-        ("canva", "Canva Pro"),
-        ("adobe", "Adobe Creative Cloud"),
         ("amazon", "Amazon Prime")
     ]
 

@@ -24,6 +24,7 @@ final class Subscription {
     var iconName: String = "creditcard"
     var colorHex: String = "#A855F7"
     var isFreeTrial: Bool = false
+    var isActive: Bool = true
     var customReminderDays: Int?
     var priceHistory: [PriceRecord] = []
 
@@ -37,6 +38,7 @@ final class Subscription {
         iconName: String = "creditcard",
         colorHex: String = "#A855F7",
         isFreeTrial: Bool = false,
+        isActive: Bool = true,
         customReminderDays: Int? = nil,
         priceHistory: [PriceRecord] = []
     ) {
@@ -49,6 +51,7 @@ final class Subscription {
         self.iconName = iconName
         self.colorHex = colorHex
         self.isFreeTrial = isFreeTrial
+        self.isActive = isActive
         self.customReminderDays = customReminderDays
         self.priceHistory = priceHistory
     }

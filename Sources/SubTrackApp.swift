@@ -4,6 +4,7 @@ import SwiftData
 @main
 struct SubTrackApp: App {
     @AppStorage("appTheme") private var appTheme = "system"
+    @AppStorage("appLanguage") private var appLanguage = "tr"
 
     private let modelContainer: ModelContainer = SubTrackApp.makeModelContainer()
 
@@ -15,8 +16,13 @@ struct SubTrackApp: App {
         WindowGroup {
             ContentView()
                 .preferredColorScheme(resolvedColorScheme)
+                .environment(\.locale, resolvedLocale)
         }
         .modelContainer(modelContainer)
+    }
+
+    private var resolvedLocale: Locale {
+        Locale(identifier: appLanguage == "tr" ? "tr_TR" : "en_US")
     }
 
     private var resolvedColorScheme: ColorScheme? {

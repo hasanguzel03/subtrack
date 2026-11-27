@@ -4,6 +4,7 @@ struct L10n {
     @AppStorage("appLanguage") static var language = "tr"
 
     static var isTR: Bool { language == "tr" }
+    static var locale: Locale { Locale(identifier: isTR ? "tr_TR" : "en_US") }
 
     // MARK: - Onboarding
 
@@ -40,7 +41,11 @@ struct L10n {
 
     static var proComingSoon: String { isTR ? "SubTrack Pro yakında" : "SubTrack Pro coming soon" }
     static var ok: String { isTR ? "Tamam" : "OK" }
+    static var newSubscription: String { isTR ? "Yeni +" : "New +" }
     static var trial: String { isTR ? "Deneme" : "Trial" }
+    static var inactive: String { isTR ? "Pasif" : "Inactive" }
+    static var deactivate: String { isTR ? "Deaktif Et" : "Deactivate" }
+    static var activate: String { isTR ? "Aktif Et" : "Activate" }
     static var totalLabel: String { isTR ? "Toplam" : "Total" }
 
     static func amountMonthly(_ amount: String, _ currency: String) -> String {

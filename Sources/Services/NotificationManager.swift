@@ -28,6 +28,11 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate, @un
         currencySymbol: String,
         allowImmediateFallback: Bool = true
     ) {
+        guard subscription.isActive else {
+            cancelNotification(for: subscription.id)
+            return
+        }
+
         let snapshot = SubscriptionSnapshot(subscription: subscription, defaultReminderDays: defaultReminderDays)
         guard let payload = Self.makePayload(
             from: snapshot,
@@ -77,6 +82,9 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate, @un
         currencySymbol: String
     ) {
         let items: [(identifier: String, payload: NotificationPayload?)] = subscriptions.map { sub in
+            guard sub.isActive else {
+                return (sub.id.uuidString, nil)
+            }
             let snapshot = SubscriptionSnapshot(subscription: sub, defaultReminderDays: defaultReminderDays)
             let payload = Self.makePayload(
                 from: snapshot,

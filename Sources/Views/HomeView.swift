@@ -2,7 +2,9 @@ import SwiftUI
 import SwiftData
 
 struct HomeView: View {
+    @Environment(\.modelContext) private var modelContext
     @AppStorage("currencySymbol") private var currencySymbol = "₺"
+    @AppStorage("reminderDaysBefore") private var reminderDaysBefore = 1
     @AppStorage("appLanguage") private var appLanguage = "tr"
     @Query(sort: \Subscription.nextBillingDate) private var subscriptions: [Subscription]
 
@@ -30,10 +32,18 @@ struct HomeView: View {
         }
     }
 
-    // MARK: - Totals (exclude free trials)
+    // MARK: - Derived Lists & Totals (Active Only, Exclude Free Trials)
+
+    private var activeSubscriptions: [Subscription] {
+        subscriptions.filter(\.isActive)
+    }
+
+    private var inactiveSubscriptions: [Subscription] {
+        subscriptions.filter { !$0.isActive }
+    }
 
     private var paidSubscriptions: [Subscription] {
-        subscriptions.filter { !$0.isFreeTrial }
+        subscriptions.filter { $0.isActive && !$0.isFreeTrial }
     }
 
     private var totalMonthly: Double {
@@ -87,13 +97,12 @@ struct HomeView: View {
                 // Subscription list
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(spacing: 12) {
-                        ForEach(subscriptions) { sub in
-                            Button {
-                                activeSheet = .edit(sub)
-                            } label: {
-                                subscriptionRow(sub)
-                            }
-                            .buttonStyle(.plain)
+                        ForEach(activeSubscriptions) { sub in
+                            subscriptionCardButton(for: sub)
+                        }
+
+                        ForEach(inactiveSubscriptions) { sub in
+                            subscriptionCardButton(for: sub)
                         }
 
                         // SubTrack Pro (not included in total)
@@ -110,7 +119,7 @@ struct HomeView: View {
                                 Text("•")
                                     .foregroundStyle(.secondary)
 
-                                Text(proDate, format: .dateTime.day().month(.abbreviated))
+                                Text(proDate, format: .dateTime.day().month(.abbreviated).locale(L10n.locale))
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
 
@@ -127,7 +136,7 @@ struct HomeView: View {
                         // New + & Voice Dictation
                         HStack(spacing: 12) {
                             Button { activeSheet = .add } label: {
-                                Text("New +")
+                                Text(L10n.newSubscription)
                                     .font(.subheadline.weight(.medium))
                                     .frame(minHeight: 20)
                                     .aeroCard()
@@ -190,19 +199,52 @@ struct HomeView: View {
         }
     }
 
-    // MARK: - Subscription Row
+    // MARK: - Subscription Row & Context Menu
+
+    private func subscriptionCardButton(for sub: Subscription) -> some View {
+        Button {
+            activeSheet = .edit(sub)
+        } label: {
+            subscriptionRow(sub)
+        }
+        .buttonStyle(.plain)
+        .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .contextMenu {
+            Button {
+                toggleSubscriptionActive(sub)
+            } label: {
+                Label(
+                    sub.isActive ? L10n.deactivate : L10n.activate,
+                    systemImage: sub.isActive ? "pause.circle" : "play.circle"
+                )
+            }
+
+            Button(role: .destructive) {
+                deleteSubscription(sub)
+            } label: {
+                Label(L10n.delete, systemImage: "trash")
+            }
+        }
+    }
 
     private func subscriptionRow(_ sub: Subscription) -> some View {
         HStack(spacing: 10) {
             Image(systemName: sub.iconName)
                 .font(.body.weight(.semibold))
                 .frame(width: 24)
-                .foregroundStyle(Color(hex: sub.colorHex))
+                .foregroundStyle(sub.isActive ? Color(hex: sub.colorHex) : Color.secondary)
 
             Text(sub.name)
                 .font(.body.weight(.semibold))
 
-            if sub.isFreeTrial {
+            if !sub.isActive {
+                Text(L10n.inactive)
+                    .font(.caption2.weight(.semibold))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .foregroundStyle(.secondary)
+            } else if sub.isFreeTrial {
                 Text(L10n.trial)
                     .font(.caption2.weight(.semibold))
                     .padding(.horizontal, 6)
@@ -214,21 +256,72 @@ struct HomeView: View {
             Text("•")
                 .foregroundStyle(.secondary)
 
-            Text(sub.nextBillingDate, format: .dateTime.day().month(.abbreviated))
+            Text(sub.nextBillingDate, format: .dateTime.day().month(.abbreviated).locale(L10n.locale))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
             Spacer()
 
-            if sub.billingCycle == "yearly" {
-                Text("\(currencySymbol)\(formattedPrice(sub.price)) /y")
-                    .font(.body.weight(.semibold))
-            } else {
-                Text("\(currencySymbol)\(formattedPrice(sub.price))")
-                    .font(.body.weight(.semibold))
-            }
+            Text(
+                sub.billingCycle == "yearly"
+                    ? "\(currencySymbol)\(formattedPrice(sub.price)) /y"
+                    : "\(currencySymbol)\(formattedPrice(sub.price))"
+            )
+            .font(.body.weight(.semibold))
+            .strikethrough(!sub.isActive, color: .secondary)
         }
         .aeroCard()
+        .opacity(sub.isActive ? 1 : 0.45)
+    }
+
+    // MARK: - Context Actions
+
+    private func toggleSubscriptionActive(_ sub: Subscription) {
+        withAnimation(.easeInOut(duration: 0.25)) {
+            sub.isActive.toggle()
+
+            if sub.isActive {
+                advancePastDateIfNeeded(for: sub)
+            }
+
+            try? modelContext.save()
+        }
+
+        if sub.isActive {
+            NotificationManager.shared.scheduleNotification(
+                for: sub,
+                defaultReminderDays: reminderDaysBefore,
+                currencySymbol: currencySymbol
+            )
+        } else {
+            NotificationManager.shared.cancelNotification(for: sub)
+        }
+    }
+
+    private func deleteSubscription(_ sub: Subscription) {
+        NotificationManager.shared.cancelNotification(for: sub)
+        withAnimation(.easeInOut(duration: 0.25)) {
+            modelContext.delete(sub)
+            try? modelContext.save()
+        }
+    }
+
+    private func advancePastDateIfNeeded(for sub: Subscription) {
+        let calendar = Calendar.current
+        let startOfToday = calendar.startOfDay(for: .now)
+        var billingDay = calendar.startOfDay(for: sub.nextBillingDate)
+
+        guard billingDay < startOfToday else { return }
+
+        let component: Calendar.Component = sub.billingCycle == "yearly" ? .year : .month
+        var iterations = 0
+        while billingDay < startOfToday && iterations < 120 {
+            guard let next = calendar.date(byAdding: component, value: 1, to: billingDay) else { break }
+            billingDay = next
+            iterations += 1
+        }
+
+        sub.nextBillingDate = billingDay
     }
 
     private func formattedPrice(_ value: Double) -> String {
@@ -250,6 +343,18 @@ struct HomeView: View {
 
     // MARK: - Total Bar
 
+    private var primaryTotalText: String {
+        showYearly
+            ? L10n.amountYearly(formattedTotalPrice(totalYearly), currencySymbol)
+            : L10n.amountMonthly(formattedTotalPrice(totalMonthly), currencySymbol)
+    }
+
+    private var secondaryTotalText: String {
+        showYearly
+            ? L10n.amountMonthly(formattedTotalPrice(totalMonthly), currencySymbol)
+            : L10n.amountYearly(formattedTotalPrice(totalYearly), currencySymbol)
+    }
+
     private var totalBar: some View {
         VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 4) {
@@ -263,25 +368,26 @@ struct HomeView: View {
             }
 
             Button {
-                withAnimation(.easeInOut(duration: 0.3)) {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                     showYearly.toggle()
                 }
             } label: {
-                HStack {
+                HStack(alignment: .center) {
                     Text(L10n.totalLabel)
                         .font(.title3.weight(.semibold))
 
                     Spacer()
 
-                    Group {
-                        if showYearly {
-                            Text(L10n.amountYearly(formattedTotalPrice(totalYearly), currencySymbol))
-                        } else {
-                            Text(L10n.amountMonthly(formattedTotalPrice(totalMonthly), currencySymbol))
-                        }
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(primaryTotalText)
+                            .font(.title3.weight(.bold))
+                            .contentTransition(.numericText())
+
+                        Text(secondaryTotalText)
+                            .font(.caption.weight(.light))
+                            .opacity(0.55)
+                            .contentTransition(.numericText())
                     }
-                    .font(.title3.weight(.bold))
-                    .contentTransition(.numericText())
                 }
                 .contentShape(Rectangle())
             }

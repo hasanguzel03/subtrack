@@ -139,6 +139,7 @@ struct AddSubscriptionView: View {
                             )
                             .datePickerStyle(.compact)
                             .labelsHidden()
+                            .environment(\.locale, L10n.locale)
                         }
 
                         HStack(spacing: 8) {
@@ -285,7 +286,7 @@ struct AddSubscriptionView: View {
             colorHex = item.colorHex
             billingCycle = item.defaultCycle
 
-            let price = currencySymbol == "$" ? item.defaultPriceUSD : item.defaultPriceTRY
+            let price = item.defaultPrice(for: currencySymbol)
             priceText = formatPrice(price)
         }
     }
@@ -411,7 +412,7 @@ struct AddSubscriptionView: View {
                 ForEach(Array(transitions.enumerated()), id: \.element.id) { index, item in
                     HStack(spacing: 8) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(item.date, format: .dateTime.day().month(.abbreviated).year())
+                            Text(item.date, format: .dateTime.day().month(.abbreviated).year().locale(L10n.locale))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
 

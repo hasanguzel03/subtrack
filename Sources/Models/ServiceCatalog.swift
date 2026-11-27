@@ -7,24 +7,32 @@ struct ServiceCatalogItem: Identifiable {
     let colorHex: String
     let defaultPriceTRY: Double
     let defaultPriceUSD: Double
+    let defaultPriceEUR: Double
+    let defaultPriceGBP: Double
     let defaultCycle: String   // "monthly" or "yearly"
+
+    func defaultPrice(for currencySymbol: String) -> Double {
+        switch currencySymbol {
+        case "₺": return defaultPriceTRY
+        case "$": return defaultPriceUSD
+        case "€": return defaultPriceEUR
+        case "£": return defaultPriceGBP
+        default: return defaultPriceUSD
+        }
+    }
 }
 
 let serviceCatalog: [ServiceCatalogItem] = [
-    ServiceCatalogItem(name: "Netflix",              iconName: "film",                colorHex: "#E50914", defaultPriceTRY: 229,    defaultPriceUSD: 15.49, defaultCycle: "monthly"),
-    ServiceCatalogItem(name: "Spotify",              iconName: "music.note",          colorHex: "#1DB954", defaultPriceTRY: 59,     defaultPriceUSD: 10.99, defaultCycle: "monthly"),
-    ServiceCatalogItem(name: "YouTube Premium",      iconName: "play.rectangle",      colorHex: "#FF0000", defaultPriceTRY: 79.99,  defaultPriceUSD: 13.99, defaultCycle: "monthly"),
-    ServiceCatalogItem(name: "iCloud+",              iconName: "icloud",              colorHex: "#007AFF", defaultPriceTRY: 39.99,  defaultPriceUSD: 2.99,  defaultCycle: "monthly"),
-    ServiceCatalogItem(name: "Apple Music",          iconName: "headphones",          colorHex: "#FA243C", defaultPriceTRY: 39.99,  defaultPriceUSD: 10.99, defaultCycle: "monthly"),
-    ServiceCatalogItem(name: "Amazon Prime",         iconName: "shippingbox",         colorHex: "#00A8E1", defaultPriceTRY: 39,     defaultPriceUSD: 14.99, defaultCycle: "monthly"),
-    ServiceCatalogItem(name: "ChatGPT Plus",         iconName: "sparkles",            colorHex: "#10A37F", defaultPriceTRY: 679,    defaultPriceUSD: 20,    defaultCycle: "monthly"),
-    ServiceCatalogItem(name: "Disney+",              iconName: "star",                colorHex: "#113CCF", defaultPriceTRY: 149,    defaultPriceUSD: 13.99, defaultCycle: "monthly"),
-    ServiceCatalogItem(name: "BluTV",                iconName: "tv",                  colorHex: "#002BE7", defaultPriceTRY: 84.99,  defaultPriceUSD: 7.99,  defaultCycle: "monthly"),
-    ServiceCatalogItem(name: "Max",                  iconName: "tv",                  colorHex: "#002BE7", defaultPriceTRY: 149,    defaultPriceUSD: 15.99, defaultCycle: "monthly"),
-    ServiceCatalogItem(name: "Exxen",                iconName: "play.circle",         colorHex: "#F5C518", defaultPriceTRY: 149.90, defaultPriceUSD: 9.99,  defaultCycle: "monthly"),
-    ServiceCatalogItem(name: "Xbox Game Pass",       iconName: "gamecontroller",      colorHex: "#107C10", defaultPriceTRY: 339,    defaultPriceUSD: 17.99, defaultCycle: "monthly"),
-    ServiceCatalogItem(name: "PlayStation Plus",     iconName: "gamecontroller.fill", colorHex: "#0050C8", defaultPriceTRY: 440,    defaultPriceUSD: 17.99, defaultCycle: "monthly"),
-    ServiceCatalogItem(name: "Adobe Creative Cloud", iconName: "paintbrush",          colorHex: "#FF0000", defaultPriceTRY: 1200,   defaultPriceUSD: 59.99, defaultCycle: "monthly"),
-    ServiceCatalogItem(name: "Canva Pro",            iconName: "wand.and.stars",      colorHex: "#00C4CC", defaultPriceTRY: 529,    defaultPriceUSD: 12.99, defaultCycle: "monthly"),
-    ServiceCatalogItem(name: "Duolingo Super",       iconName: "book",                colorHex: "#58CC02", defaultPriceTRY: 519,    defaultPriceUSD: 12.99, defaultCycle: "yearly"),
+    ServiceCatalogItem(name: "Netflix",          iconName: "film",                colorHex: "#E50914", defaultPriceTRY: 259.99, defaultPriceUSD: 17.99, defaultPriceEUR: 15.99, defaultPriceGBP: 12.99, defaultCycle: "monthly"),
+    ServiceCatalogItem(name: "Spotify",          iconName: "music.note",          colorHex: "#1DB954", defaultPriceTRY: 115.0,  defaultPriceUSD: 12.99, defaultPriceEUR: 12.99, defaultPriceGBP: 11.99, defaultCycle: "monthly"),
+    ServiceCatalogItem(name: "YouTube Premium",  iconName: "play.rectangle",      colorHex: "#FF0000", defaultPriceTRY: 119.99, defaultPriceUSD: 15.99, defaultPriceEUR: 12.99, defaultPriceGBP: 12.99, defaultCycle: "monthly"),
+    ServiceCatalogItem(name: "iCloud+",          iconName: "icloud",              colorHex: "#007AFF", defaultPriceTRY: 49.99,  defaultPriceUSD: 0.99,  defaultPriceEUR: 0.99,  defaultPriceGBP: 0.99,  defaultCycle: "monthly"),
+    ServiceCatalogItem(name: "Apple Music",      iconName: "headphones",          colorHex: "#FA243C", defaultPriceTRY: 89.99,  defaultPriceUSD: 10.99, defaultPriceEUR: 11.99, defaultPriceGBP: 10.99, defaultCycle: "monthly"),
+    ServiceCatalogItem(name: "Amazon Prime",     iconName: "shippingbox",         colorHex: "#00A8E1", defaultPriceTRY: 69.90,  defaultPriceUSD: 14.99, defaultPriceEUR: 8.99,  defaultPriceGBP: 8.99,  defaultCycle: "monthly"),
+    ServiceCatalogItem(name: "ChatGPT Plus",     iconName: "sparkles",            colorHex: "#10A37F", defaultPriceTRY: 999.99, defaultPriceUSD: 20.0,  defaultPriceEUR: 22.99, defaultPriceGBP: 19.99, defaultCycle: "monthly"),
+    ServiceCatalogItem(name: "Gemini",           iconName: "sparkle",             colorHex: "#4285F4", defaultPriceTRY: 719.99, defaultPriceUSD: 19.99, defaultPriceEUR: 21.99, defaultPriceGBP: 18.99, defaultCycle: "monthly"),
+    ServiceCatalogItem(name: "Claude",           iconName: "sun.max",             colorHex: "#D97757", defaultPriceTRY: 899.99, defaultPriceUSD: 20.0,  defaultPriceEUR: 21.99, defaultPriceGBP: 18.0,  defaultCycle: "monthly"),
+    ServiceCatalogItem(name: "Disney+",          iconName: "star",                colorHex: "#113CCF", defaultPriceTRY: 249.90, defaultPriceUSD: 12.49, defaultPriceEUR: 9.99,  defaultPriceGBP: 8.99,  defaultCycle: "monthly"),
+    ServiceCatalogItem(name: "Xbox Game Pass",   iconName: "gamecontroller",      colorHex: "#107C10", defaultPriceTRY: 409.0,  defaultPriceUSD: 14.99, defaultPriceEUR: 12.99, defaultPriceGBP: 10.99, defaultCycle: "monthly"),
+    ServiceCatalogItem(name: "PlayStation Plus", iconName: "gamecontroller.fill", colorHex: "#0050C8", defaultPriceTRY: 400.0,  defaultPriceUSD: 10.99, defaultPriceEUR: 9.99,  defaultPriceGBP: 6.99,  defaultCycle: "monthly"),
 ]

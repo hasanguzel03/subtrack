@@ -7,14 +7,14 @@ struct AnalyticsView: View {
     @AppStorage("appLanguage") private var appLanguage = "tr"
     @Query(sort: \Subscription.nextBillingDate) private var subscriptions: [Subscription]
 
-    // MARK: - Derived Data (Free Trials Excluded from Cost)
+    // MARK: - Derived Data (Active Only, Free Trials Excluded from Cost)
 
     private var paidSubscriptions: [Subscription] {
-        subscriptions.filter { !$0.isFreeTrial }
+        subscriptions.filter { $0.isActive && !$0.isFreeTrial }
     }
 
     private var trialSubscriptions: [Subscription] {
-        subscriptions.filter { $0.isFreeTrial }
+        subscriptions.filter { $0.isActive && $0.isFreeTrial }
     }
 
     private var totalMonthly: Double {
